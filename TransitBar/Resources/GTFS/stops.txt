@@ -1,0 +1,5 @@
+stop_id,stop_name,stop_lat,stop_lon
+bdt,Bellevue Downtown Station,47.6155,-122.1968
+sbs,South Bellevue Station,47.5860,-122.1930
+red,Redmond Technology Station,47.6423,-122.1372
+sea,Seattle Station,47.6097,-122.3341
