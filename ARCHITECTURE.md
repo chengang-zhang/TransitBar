@@ -50,8 +50,9 @@ V0 injects `StaticGtfsTransitRepository`. V1 can inject `OneBusAwayTransitReposi
 
 ## GTFS Parsing
 
-The static repository loads these bundled files from `Resources/GTFS`:
+The static repository loads the consolidated Puget Sound GTFS bundle from `TransitBar/Resources/Puget Sound.bundle`.
 
+- `agency.txt`
 - `stops.txt`
 - `routes.txt`
 - `trips.txt`
@@ -63,7 +64,7 @@ Parsing flow:
 
 1. Read each CSV file from the bundle.
 2. Parse CSV rows using header names.
-3. Build lookup dictionaries for stops, routes, trips, service calendars, and calendar date exceptions.
+3. Build lookup dictionaries for agencies, stops, routes, trips, service calendars, and calendar date exceptions.
 4. Index stop times by `stop_id`.
 5. Convert GTFS times to seconds after the service day midnight.
 

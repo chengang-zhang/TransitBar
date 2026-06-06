@@ -72,6 +72,16 @@ struct TransitBarTests {
                         sequence: 1
                     )
                 ]
+            ],
+            stopTimesByTripId: [
+                "trip": [
+                    GTFSStopTime(
+                        tripId: "trip",
+                        stopId: "stop",
+                        departureSeconds: GTFSTime.seconds(from: "25:30:00")!,
+                        sequence: 1
+                    )
+                ]
             ]
         )
 
@@ -81,6 +91,83 @@ struct TransitBarTests {
         #expect(departures.count == 1)
         #expect(departures.first?.routeName == "2 Line")
         #expect(departures.first?.destination == "Redmond")
+        #expect(departures.first?.departureTime == expectedDeparture)
+    }
+
+    @MainActor
+    @Test func repositoryFallsBackToNextDepartureWhenNormalWindowIsEmpty() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        let serviceStart = calendar.date(from: DateComponents(year: 2026, month: 1, day: 2))!
+        let serviceEnd = calendar.date(from: DateComponents(year: 2026, month: 1, day: 3))!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 1, day: 2, hour: 1, minute: 55))!
+        let expectedDeparture = calendar.date(from: DateComponents(year: 2026, month: 1, day: 2, hour: 8, minute: 10))!
+
+        let schedule = GTFSSchedule(
+            stops: [
+                "stop": GTFSStop(
+                    id: "stop",
+                    code: "100",
+                    name: "Test Stop",
+                    description: "Test Stop to Lynnwood",
+                    locationType: nil,
+                    parentStation: "station",
+                    platformCode: "1",
+                    feedName: "Test Feed"
+                )
+            ],
+            routes: [
+                "route": GTFSRoute(
+                    id: "route",
+                    feedId: "sound-transit",
+                    feedName: "Sound Transit",
+                    shortName: "2 Line",
+                    longName: "Link",
+                    routeDescription: "",
+                    routeType: 0,
+                    colorHex: "007CAD",
+                    textColorHex: "FFFFFF"
+                )
+            ],
+            trips: ["morning-trip": GTFSTrip(id: "morning-trip", routeId: "route", serviceId: "daily", headsign: "Lynnwood")],
+            calendars: [
+                "daily": GTFSCalendar(
+                    serviceId: "daily",
+                    activeWeekdays: Set(1...7),
+                    startDate: serviceStart,
+                    endDate: serviceEnd
+                )
+            ],
+            calendarDates: [:],
+            stopTimesByStopId: [
+                "stop": [
+                    GTFSStopTime(
+                        tripId: "morning-trip",
+                        stopId: "stop",
+                        departureSeconds: GTFSTime.seconds(from: "08:10:00")!,
+                        sequence: 1
+                    )
+                ]
+            ],
+            stopTimesByTripId: [
+                "morning-trip": [
+                    GTFSStopTime(
+                        tripId: "morning-trip",
+                        stopId: "stop",
+                        departureSeconds: GTFSTime.seconds(from: "08:10:00")!,
+                        sequence: 1
+                    )
+                ]
+            ]
+        )
+
+        let repository = StaticGtfsTransitRepository(schedule: schedule, calendar: calendar)
+        let departures = repository.upcomingDepartures(stopId: "stop", at: now)
+
+        #expect(departures.count == 1)
+        #expect(departures.first?.routeName == "2 Line")
+        #expect(departures.first?.destination == "Lynnwood")
         #expect(departures.first?.departureTime == expectedDeparture)
     }
 
@@ -132,6 +219,17 @@ struct TransitBarTests {
                     colorHex: "FDB71A",
                     textColorHex: "000000"
                 ),
+                "duplicate-bus-route": GTFSRoute(
+                    id: "duplicate-bus-route",
+                    feedId: "king-county",
+                    feedName: "King County",
+                    shortName: "255",
+                    longName: "Bus",
+                    routeDescription: "Totem Lake TC-Kirkland TC-UW Link Sta-Univ Dist",
+                    routeType: 3,
+                    colorHex: "FDB71A",
+                    textColorHex: "000000"
+                ),
                 "replacement-shuttle": GTFSRoute(
                     id: "replacement-shuttle",
                     feedId: "sound-transit",
@@ -142,6 +240,17 @@ struct TransitBarTests {
                     routeType: 3,
                     colorHex: "FFB819",
                     textColorHex: "000000"
+                ),
+                "ferry-route": GTFSRoute(
+                    id: "ferry-route",
+                    feedId: "puget-sound",
+                    feedName: "Washington State Ferries",
+                    shortName: "",
+                    longName: "Seattle - Bainbridge Island",
+                    routeDescription: "",
+                    routeType: 4,
+                    colorHex: "",
+                    textColorHex: ""
                 )
             ],
             trips: [
@@ -153,22 +262,168 @@ struct TransitBarTests {
             stopTimesByStopId: [
                 "rail-stop": [GTFSStopTime(tripId: "rail-trip", stopId: "rail-stop", departureSeconds: 3600, sequence: 1)],
                 "bus-stop": [GTFSStopTime(tripId: "bus-trip", stopId: "bus-stop", departureSeconds: 3600, sequence: 1)]
+            ],
+            stopTimesByTripId: [
+                "rail-trip": [GTFSStopTime(tripId: "rail-trip", stopId: "rail-stop", departureSeconds: 3600, sequence: 1)],
+                "bus-trip": [GTFSStopTime(tripId: "bus-trip", stopId: "bus-stop", departureSeconds: 3600, sequence: 1)]
             ]
         )
 
         let repository = StaticGtfsTransitRepository(schedule: schedule)
 
-        let railResults = try await repository.searchLines(query: "2", filter: .lightRail)
+        let railResults = try await repository.searchLines(query: "2", filter: .rail)
         let busResults = try await repository.searchLines(query: "255", filter: .bus)
+        let ferryResults = try await repository.searchLines(query: "Bainbridge", filter: .ferry)
         let allResults = try await repository.searchLines(query: "", filter: .all)
         let shuttleResults = try await repository.searchLines(query: "Shuttle", filter: .bus)
         let railStops = try await repository.getStops(lineId: "rail-route")
 
         #expect(railResults.map(\.id) == ["rail-route"])
         #expect(busResults.map(\.id) == ["bus-route"])
-        #expect(allResults.map(\.id) == ["rail-route", "bus-route"])
-        #expect(shuttleResults.isEmpty)
+        #expect(ferryResults.map(\.id) == ["ferry-route"])
+        #expect(allResults.map(\.id) == ["rail-route", "bus-route", "replacement-shuttle", "ferry-route"])
+        #expect(shuttleResults.map(\.id) == ["replacement-shuttle"])
         #expect(railStops.map(\.id) == ["rail-stop"])
+    }
+
+    @MainActor
+    @Test func repositoryOrdersStopsUsingRepresentativeTripPattern() async throws {
+        let stops = [
+            "stop-a": GTFSStop(id: "stop-a", code: "", name: "A Station", description: "", locationType: 0, parentStation: "", platformCode: "", feedName: "Test Feed"),
+            "stop-b": GTFSStop(id: "stop-b", code: "", name: "B Station", description: "", locationType: 0, parentStation: "", platformCode: "", feedName: "Test Feed"),
+            "stop-c": GTFSStop(id: "stop-c", code: "", name: "C Station", description: "", locationType: 0, parentStation: "", platformCode: "", feedName: "Test Feed")
+        ]
+
+        let schedule = GTFSSchedule(
+            stops: stops,
+            routes: [
+                "route": GTFSRoute(
+                    id: "route",
+                    feedId: "sound-transit",
+                    feedName: "Sound Transit",
+                    shortName: "2 Line",
+                    longName: "Link",
+                    routeDescription: "",
+                    routeType: 0,
+                    colorHex: "007CAD",
+                    textColorHex: "FFFFFF"
+                )
+            ],
+            trips: [
+                "trip-1": GTFSTrip(id: "trip-1", routeId: "route", serviceId: "daily", headsign: "Downtown"),
+                "trip-2": GTFSTrip(id: "trip-2", routeId: "route", serviceId: "daily", headsign: "Downtown"),
+                "trip-3": GTFSTrip(id: "trip-3", routeId: "route", serviceId: "daily", headsign: "Downtown")
+            ],
+            calendars: [:],
+            calendarDates: [:],
+            stopTimesByStopId: [
+                "stop-a": [
+                    GTFSStopTime(tripId: "trip-1", stopId: "stop-a", departureSeconds: 3600, sequence: 1),
+                    GTFSStopTime(tripId: "trip-2", stopId: "stop-a", departureSeconds: 3600, sequence: 1),
+                    GTFSStopTime(tripId: "trip-3", stopId: "stop-a", departureSeconds: 3900, sequence: 1)
+                ],
+                "stop-b": [
+                    GTFSStopTime(tripId: "trip-1", stopId: "stop-b", departureSeconds: 3800, sequence: 3),
+                    GTFSStopTime(tripId: "trip-2", stopId: "stop-b", departureSeconds: 3650, sequence: 2),
+                    GTFSStopTime(tripId: "trip-3", stopId: "stop-b", departureSeconds: 4100, sequence: 3)
+                ],
+                "stop-c": [
+                    GTFSStopTime(tripId: "trip-1", stopId: "stop-c", departureSeconds: 3700, sequence: 2),
+                    GTFSStopTime(tripId: "trip-2", stopId: "stop-c", departureSeconds: 3800, sequence: 3),
+                    GTFSStopTime(tripId: "trip-3", stopId: "stop-c", departureSeconds: 4000, sequence: 2)
+                ]
+            ],
+            stopTimesByTripId: [
+                "trip-1": [
+                    GTFSStopTime(tripId: "trip-1", stopId: "stop-a", departureSeconds: 3600, sequence: 1),
+                    GTFSStopTime(tripId: "trip-1", stopId: "stop-c", departureSeconds: 3700, sequence: 2),
+                    GTFSStopTime(tripId: "trip-1", stopId: "stop-b", departureSeconds: 3800, sequence: 3)
+                ],
+                "trip-2": [
+                    GTFSStopTime(tripId: "trip-2", stopId: "stop-a", departureSeconds: 3600, sequence: 1),
+                    GTFSStopTime(tripId: "trip-2", stopId: "stop-b", departureSeconds: 3650, sequence: 2),
+                    GTFSStopTime(tripId: "trip-2", stopId: "stop-c", departureSeconds: 3800, sequence: 3)
+                ],
+                "trip-3": [
+                    GTFSStopTime(tripId: "trip-3", stopId: "stop-a", departureSeconds: 3900, sequence: 1),
+                    GTFSStopTime(tripId: "trip-3", stopId: "stop-c", departureSeconds: 4000, sequence: 2),
+                    GTFSStopTime(tripId: "trip-3", stopId: "stop-b", departureSeconds: 4100, sequence: 3)
+                ]
+            ]
+        )
+
+        let repository = StaticGtfsTransitRepository(schedule: schedule)
+        let routeStops = try await repository.getStops(lineId: "route")
+
+        #expect(routeStops.map(\.id) == ["stop-a", "stop-c", "stop-b"])
+    }
+
+    @MainActor
+    @Test func repositoryPrefersCompleteStopPatternOverMoreFrequentShortPattern() async throws {
+        let stops = [
+            "terminal-a": GTFSStop(id: "terminal-a", code: "", name: "Terminal A", description: "", locationType: 0, parentStation: "", platformCode: "", feedName: "Test Feed"),
+            "middle": GTFSStop(id: "middle", code: "", name: "Middle", description: "", locationType: 0, parentStation: "", platformCode: "", feedName: "Test Feed"),
+            "terminal-b": GTFSStop(id: "terminal-b", code: "", name: "Terminal B", description: "", locationType: 0, parentStation: "", platformCode: "", feedName: "Test Feed")
+        ]
+
+        let schedule = GTFSSchedule(
+            stops: stops,
+            routes: [
+                "route": GTFSRoute(
+                    id: "route",
+                    feedId: "sound-transit",
+                    feedName: "Sound Transit",
+                    shortName: "1 Line",
+                    longName: "Terminal A - Terminal B",
+                    routeDescription: "",
+                    routeType: 0,
+                    colorHex: "28813F",
+                    textColorHex: "FFFFFF"
+                )
+            ],
+            trips: [
+                "complete-trip": GTFSTrip(id: "complete-trip", routeId: "route", serviceId: "daily", headsign: "Terminal B"),
+                "short-trip-1": GTFSTrip(id: "short-trip-1", routeId: "route", serviceId: "daily", headsign: "Middle"),
+                "short-trip-2": GTFSTrip(id: "short-trip-2", routeId: "route", serviceId: "daily", headsign: "Middle")
+            ],
+            calendars: [:],
+            calendarDates: [:],
+            stopTimesByStopId: [
+                "terminal-a": [
+                    GTFSStopTime(tripId: "complete-trip", stopId: "terminal-a", departureSeconds: 3600, sequence: 1),
+                    GTFSStopTime(tripId: "short-trip-1", stopId: "terminal-a", departureSeconds: 3700, sequence: 1),
+                    GTFSStopTime(tripId: "short-trip-2", stopId: "terminal-a", departureSeconds: 3800, sequence: 1)
+                ],
+                "middle": [
+                    GTFSStopTime(tripId: "complete-trip", stopId: "middle", departureSeconds: 3700, sequence: 2),
+                    GTFSStopTime(tripId: "short-trip-1", stopId: "middle", departureSeconds: 3800, sequence: 2),
+                    GTFSStopTime(tripId: "short-trip-2", stopId: "middle", departureSeconds: 3900, sequence: 2)
+                ],
+                "terminal-b": [
+                    GTFSStopTime(tripId: "complete-trip", stopId: "terminal-b", departureSeconds: 3800, sequence: 3)
+                ]
+            ],
+            stopTimesByTripId: [
+                "complete-trip": [
+                    GTFSStopTime(tripId: "complete-trip", stopId: "terminal-a", departureSeconds: 3600, sequence: 1),
+                    GTFSStopTime(tripId: "complete-trip", stopId: "middle", departureSeconds: 3700, sequence: 2),
+                    GTFSStopTime(tripId: "complete-trip", stopId: "terminal-b", departureSeconds: 3800, sequence: 3)
+                ],
+                "short-trip-1": [
+                    GTFSStopTime(tripId: "short-trip-1", stopId: "terminal-a", departureSeconds: 3700, sequence: 1),
+                    GTFSStopTime(tripId: "short-trip-1", stopId: "middle", departureSeconds: 3800, sequence: 2)
+                ],
+                "short-trip-2": [
+                    GTFSStopTime(tripId: "short-trip-2", stopId: "terminal-a", departureSeconds: 3800, sequence: 1),
+                    GTFSStopTime(tripId: "short-trip-2", stopId: "middle", departureSeconds: 3900, sequence: 2)
+                ]
+            ]
+        )
+
+        let repository = StaticGtfsTransitRepository(schedule: schedule)
+        let routeStops = try await repository.getStops(lineId: "route")
+
+        #expect(routeStops.map(\.id) == ["terminal-a", "middle", "terminal-b"])
     }
 
 }

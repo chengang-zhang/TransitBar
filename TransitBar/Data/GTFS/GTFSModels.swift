@@ -95,4 +95,5 @@ struct GTFSSchedule: Sendable {
     let calendars: [String: GTFSCalendar]
     let calendarDates: [String: [String: GTFSCalendarDate]]
     let stopTimesByStopId: [String: [GTFSStopTime]]
+    let stopTimesByTripId: [String: [GTFSStopTime]]
 }

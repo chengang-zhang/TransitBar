@@ -2,16 +2,17 @@ import Foundation
 
 final class StaticGtfsTransitRepository: TransitRepository, @unchecked Sendable {
     private let schedule: GTFSSchedule
-    private let routeTypesByStopId: [String: Set<Int>]
     private let calendar: Calendar
     private let horizon: TimeInterval
+    private let fallbackHorizon: TimeInterval
     private let legacyDefaultFeedId = "sound-transit"
 
     init(
         bundle: Bundle = .main,
         gtfsFeeds: [GTFSFeedResource] = GTFSFeedResource.defaultFeeds,
         calendar: Calendar = .current,
-        horizon: TimeInterval = 6 * 60 * 60
+        horizon: TimeInterval = 6 * 60 * 60,
+        fallbackHorizon: TimeInterval = 36 * 60 * 60
     ) throws {
         let parser = GTFSParser(calendar: calendar)
         let schedules = try gtfsFeeds.map { feed in
@@ -23,22 +24,27 @@ final class StaticGtfsTransitRepository: TransitRepository, @unchecked Sendable 
         }
 
         self.schedule = GTFSSchedule.merging(schedules)
-        self.routeTypesByStopId = StaticGtfsTransitRepository.routeTypesByStopId(for: self.schedule)
         self.calendar = calendar
         self.horizon = horizon
+        self.fallbackHorizon = fallbackHorizon
     }
 
-    init(schedule: GTFSSchedule, calendar: Calendar = .current, horizon: TimeInterval = 6 * 60 * 60) {
+    init(
+        schedule: GTFSSchedule,
+        calendar: Calendar = .current,
+        horizon: TimeInterval = 6 * 60 * 60,
+        fallbackHorizon: TimeInterval = 36 * 60 * 60
+    ) {
         self.schedule = schedule
-        self.routeTypesByStopId = StaticGtfsTransitRepository.routeTypesByStopId(for: schedule)
         self.calendar = calendar
         self.horizon = horizon
+        self.fallbackHorizon = fallbackHorizon
     }
 
     func searchLines(query: String, filter: StopSearchFilter) async throws -> [TransitLine] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return schedule.routes.values
+        let matchingRoutes = schedule.routes.values
             .filter { route in
                 includes(route, filter: filter)
                     && (
@@ -49,48 +55,39 @@ final class StaticGtfsTransitRepository: TransitRepository, @unchecked Sendable 
                     )
             }
             .sorted { lhs, rhs in
-                lineSortKey(lhs).localizedStandardCompare(lineSortKey(rhs)) == .orderedAscending
+                let lhsSortKey = lineSortKey(lhs)
+                let rhsSortKey = lineSortKey(rhs)
+                if lhsSortKey != rhsSortKey {
+                    return lhsSortKey.localizedStandardCompare(rhsSortKey) == .orderedAscending
+                }
+                return lhs.id.localizedStandardCompare(rhs.id) == .orderedAscending
             }
-            .map { route in
-                TransitLine(
-                    id: route.id,
-                    sourceId: route.feedId,
-                    sourceName: route.feedName,
-                    name: route.displayName,
-                    details: route.longName.isEmpty ? route.routeDescription : route.longName,
-                    routeColorHex: route.colorHex,
-                    routeTextColorHex: route.textColorHex,
-                    routeType: route.routeType
-                )
-            }
+
+        return deduplicatedRoutes(matchingRoutes).map { route in
+            TransitLine(
+                id: route.id,
+                sourceId: route.feedId,
+                sourceName: route.feedName,
+                name: route.displayName,
+                details: route.longName.isEmpty ? route.routeDescription : route.longName,
+                routeColorHex: route.colorHex,
+                routeTextColorHex: route.textColorHex,
+                routeType: route.routeType
+            )
+        }
     }
 
     func getStops(lineId: String) async throws -> [TransitStop] {
         let routeId = normalizedRouteId(lineId)
-        let tripIds = Set(trips(for: routeId).map(\.id))
-        guard !tripIds.isEmpty else { return [] }
+        let orderedStops = representativeStopIds(for: routeId).compactMap { stopId -> GTFSStop? in
+            guard let stop = schedule.stops[stopId],
+                  schedule.stopTimesByStopId[stop.id] != nil,
+                  stop.locationType != 1,
+                  stop.locationType != 2
+            else { return nil }
 
-        let orderedStops = schedule.stopTimesByStopId
-            .flatMap { _, stopTimes in
-                stopTimes.filter { tripIds.contains($0.tripId) }
-            }
-            .reduce(into: [String: Int]()) { partialResult, stopTime in
-                partialResult[stopTime.stopId] = min(partialResult[stopTime.stopId] ?? stopTime.sequence, stopTime.sequence)
-            }
-            .compactMap { stopId, sequence -> (GTFSStop, Int)? in
-                guard let stop = schedule.stops[stopId],
-                      schedule.stopTimesByStopId[stop.id] != nil,
-                      stop.locationType != 1,
-                      stop.locationType != 2
-                else { return nil }
-
-                return (stop, sequence)
-            }
-            .sorted { lhs, rhs in
-                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
-                return lhs.0.searchDisplayName.localizedStandardCompare(rhs.0.searchDisplayName) == .orderedAscending
-            }
-            .map(\.0)
+            return stop
+        }
 
         let duplicateDisplayNames = Set(
             Dictionary(grouping: orderedStops, by: \.searchDisplayName)
@@ -108,16 +105,64 @@ final class StaticGtfsTransitRepository: TransitRepository, @unchecked Sendable 
         }
     }
 
+    private func representativeStopIds(for routeId: String) -> [String] {
+        let routeTrips = trips(for: routeId)
+        guard !routeTrips.isEmpty else { return [] }
+
+        var patterns: [String: StopPattern] = [:]
+
+        for trip in routeTrips {
+            let stopIds = orderedStopIds(for: trip.id)
+            guard !stopIds.isEmpty else { continue }
+
+            let key = stopIds.joined(separator: "\u{1f}")
+            if var pattern = patterns[key] {
+                pattern.tripCount += 1
+                patterns[key] = pattern
+            } else {
+                patterns[key] = StopPattern(stopIds: stopIds, tripCount: 1)
+            }
+        }
+
+        return patterns.values.sorted { lhs, rhs in
+            if lhs.stopIds.count != rhs.stopIds.count { return lhs.stopIds.count > rhs.stopIds.count }
+            if lhs.tripCount != rhs.tripCount { return lhs.tripCount > rhs.tripCount }
+            return lhs.stopIds.joined(separator: "\u{1f}") < rhs.stopIds.joined(separator: "\u{1f}")
+        }
+        .first?
+        .stopIds ?? []
+    }
+
+    private func orderedStopIds(for tripId: String) -> [String] {
+        var seenStopIds = Set<String>()
+
+        return (schedule.stopTimesByTripId[tripId] ?? []).compactMap { stopTime in
+            guard seenStopIds.insert(stopTime.stopId).inserted else { return nil }
+            return stopTime.stopId
+        }
+    }
+
     func getDepartures(stopId: String) async throws -> [Departure] {
         upcomingDepartures(stopId: normalizedStopId(stopId), at: Date())
     }
 
     func upcomingDepartures(stopId: String, at now: Date) -> [Departure] {
         let stopTimes = schedule.stopTimesByStopId[stopId] ?? []
+        let departures = upcomingDepartures(from: stopTimes, at: now, horizon: horizon)
+
+        if !departures.isEmpty {
+            return departures
+        }
+
+        return Array(upcomingDepartures(from: stopTimes, at: now, horizon: fallbackHorizon).prefix(1))
+    }
+
+    private func upcomingDepartures(from stopTimes: [GTFSStopTime], at now: Date, horizon: TimeInterval) -> [Departure] {
         let todayStart = calendar.startOfDay(for: now)
         let end = now.addingTimeInterval(horizon)
+        let maxDayOffset = max(1, Int(ceil(horizon / (24 * 60 * 60))) + 1)
 
-        return (-1...1).flatMap { dayOffset in
+        return (-1...maxDayOffset).flatMap { dayOffset in
             departures(
                 from: stopTimes,
                 serviceDate: calendar.date(byAdding: .day, value: dayOffset, to: todayStart) ?? todayStart,
@@ -198,39 +243,46 @@ final class StaticGtfsTransitRepository: TransitRepository, @unchecked Sendable 
     }
 
     private func lineSortKey(_ route: GTFSRoute) -> String {
-        let routeTypeRank = route.routeType == 3 ? "1" : "0"
-        return "\(routeTypeRank)-\(route.displayName)"
+        "\(routeTypeRank(route.routeType))-\(route.displayName)"
     }
 
     private func includes(_ route: GTFSRoute, filter: StopSearchFilter) -> Bool {
-        switch filter {
-        case .all:
-            return isRail(route) || isKingCountyBus(route)
-        case .lightRail:
-            return isRail(route)
-        case .bus:
-            return isKingCountyBus(route)
+        filter.includes(routeType: route.routeType)
+    }
+
+    private func routeTypeRank(_ routeType: Int?) -> String {
+        switch routeType {
+        case 0, 1, 2:
+            return "0"
+        case 3:
+            return "1"
+        case 4:
+            return "2"
+        default:
+            return "3"
         }
     }
 
-    private func isRail(_ route: GTFSRoute) -> Bool {
-        [0, 1, 2].contains(route.routeType)
-    }
+    private func deduplicatedRoutes(_ routes: [GTFSRoute]) -> [GTFSRoute] {
+        var seenKeys = Set<String>()
 
-    private func isKingCountyBus(_ route: GTFSRoute) -> Bool {
-        route.routeType == 3 && route.feedId == "king-county"
-    }
+        return routes.filter { route in
+            let key = [
+                route.feedName,
+                route.displayName,
+                route.longName,
+                route.routeDescription,
+                route.routeType.map(String.init) ?? ""
+            ].joined(separator: "\u{1f}")
 
-    private static func routeTypesByStopId(for schedule: GTFSSchedule) -> [String: Set<Int>] {
-        schedule.stopTimesByStopId.reduce(into: [:]) { partialResult, entry in
-            let routeTypes = Set(entry.value.compactMap { stopTime -> Int? in
-                guard let trip = schedule.trips[stopTime.tripId] else { return nil }
-                return schedule.routes[trip.routeId]?.routeType
-            })
-
-            partialResult[entry.key] = routeTypes
+            return seenKeys.insert(key).inserted
         }
     }
+}
+
+private struct StopPattern {
+    let stopIds: [String]
+    var tripCount: Int
 }
 
 struct GTFSFeedResource: Sendable {
@@ -248,8 +300,7 @@ struct GTFSFeedResource: Sendable {
     }
 
     static let defaultFeeds = [
-        GTFSFeedResource(id: "sound-transit", directoryName: "Sound Transit.bundle", displayName: "Sound Transit"),
-        GTFSFeedResource(id: "king-county", directoryName: "King County.bundle", displayName: "King County")
+        GTFSFeedResource(id: "puget-sound", directoryName: "Puget Sound.bundle", displayName: "Puget Sound")
     ]
 }
 
@@ -266,6 +317,14 @@ private extension GTFSSchedule {
             stopTimesByStopId: schedules.reduce(into: [:]) { partialResult, schedule in
                 partialResult.merge(schedule.stopTimesByStopId) { current, new in
                     (current + new).sorted { $0.departureSeconds < $1.departureSeconds }
+                }
+            },
+            stopTimesByTripId: schedules.reduce(into: [:]) { partialResult, schedule in
+                partialResult.merge(schedule.stopTimesByTripId) { current, new in
+                    (current + new).sorted { lhs, rhs in
+                        if lhs.sequence != rhs.sequence { return lhs.sequence < rhs.sequence }
+                        return lhs.departureSeconds < rhs.departureSeconds
+                    }
                 }
             }
         )
