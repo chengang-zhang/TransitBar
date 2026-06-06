@@ -37,6 +37,7 @@ struct MenuBarContentView: View {
 
             Button("Open TransitBar") {
                 openWindow(id: "favorites")
+                surfaceTransitBarWindow()
             }
             .buttonStyle(.plain)
             .frame(width: contentWidth, alignment: .leading)
@@ -109,6 +110,15 @@ struct MenuBarContentView: View {
             if section.id != viewModel.departureSections.last?.id {
                 Divider()
             }
+        }
+    }
+
+    private func surfaceTransitBarWindow() {
+        DispatchQueue.main.async {
+            NSApplication.shared.activate()
+            NSApplication.shared.windows
+                .first { $0.title == "TransitBar" }?
+                .makeKeyAndOrderFront(nil)
         }
     }
 }
