@@ -3,7 +3,11 @@ import Foundation
 struct FailingTransitRepository: TransitRepository {
     let error: Error
 
-    func searchStops(query: String) async throws -> [TransitStop] {
+    func searchLines(query: String, filter: StopSearchFilter) async throws -> [TransitLine] {
+        throw error
+    }
+
+    func getStops(lineId: String) async throws -> [TransitStop] {
         throw error
     }
 

@@ -1,3 +1,0 @@
-route_id,agency_id,route_short_name,route_long_name,route_type
-2line,st,2 Line,Link light rail,1
-550,st,550,Bellevue-Seattle Express,3

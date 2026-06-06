@@ -26,8 +26,17 @@ struct TransitBarApp: App {
         MenuBarExtra {
             MenuBarContentView(viewModel: viewModel)
         } label: {
-            Text(viewModel.menuBarTitle)
+            if let departure = viewModel.primaryDeparture {
+                HStack(spacing: 4) {
+                    RouteBadgeView(departure: departure)
+                    Text(viewModel.minutesText(for: departure.departureTime))
+                }
+                .accessibilityLabel(viewModel.menuBarTitle)
+            } else {
+                Text(viewModel.menuBarTitle)
+            }
         }
+        .menuBarExtraStyle(.window)
 
         Window("Favorites", id: "favorites") {
             FavoritesWindowView(viewModel: viewModel)

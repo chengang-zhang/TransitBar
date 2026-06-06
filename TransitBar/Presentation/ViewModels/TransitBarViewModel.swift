@@ -6,15 +6,21 @@ final class TransitBarViewModel: ObservableObject {
     @Published private(set) var favorites: [FavoriteStop]
     @Published private(set) var primaryStopId: String?
     @Published private(set) var departureSections: [StopDeparturesSection] = []
-    @Published private(set) var searchResults: [TransitStop] = []
+    @Published private(set) var lineResults: [TransitLine] = []
+    @Published private(set) var selectedLine: TransitLine?
+    @Published private(set) var lineStops: [TransitStop] = []
     @Published private(set) var isLoadingDepartures = false
     @Published private(set) var isSearching = false
+    @Published private(set) var isLoadingLineStops = false
     @Published private(set) var errorMessage: String?
+    @Published private var displayDate = Date()
     @Published var searchQuery = ""
+    @Published var stopSearchFilter: StopSearchFilter = .all
 
     private let repository: TransitRepository
     private let settingsStore: UserSettingsStore
     private var refreshTask: Task<Void, Never>?
+    private var displayClockTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
 
     init(repository: TransitRepository, settingsStore: UserSettingsStore = UserSettingsStore()) {
@@ -24,24 +30,33 @@ final class TransitBarViewModel: ObservableObject {
         self.primaryStopId = settingsStore.primaryStopId
         ensurePrimaryStop()
         startRefreshTimer()
+        startDisplayClock()
     }
 
     deinit {
         refreshTask?.cancel()
+        displayClockTask?.cancel()
         searchTask?.cancel()
     }
 
     var menuBarTitle: String {
         guard !favorites.isEmpty else { return "TransitBar" }
-        guard
-            let primaryStopId,
-            let section = departureSections.first(where: { $0.favorite.stopId == primaryStopId }),
-            let departure = section.departures.first
-        else {
+        guard let departure = primaryDeparture else {
             return "No Departures"
         }
 
         return "\(departure.routeName) \(minutesText(for: departure.departureTime))"
+    }
+
+    var primaryDeparture: Departure? {
+        guard
+            let primaryStopId,
+            let section = departureSections.first(where: { $0.favorite.stopId == primaryStopId })
+        else {
+            return nil
+        }
+
+        return section.departures.first
     }
 
     var primaryStopName: String? {
@@ -52,26 +67,58 @@ final class TransitBarViewModel: ObservableObject {
         Task { await loadDepartures() }
     }
 
-    func searchStops() {
+    func searchLines() {
         let query = searchQuery
+        let filter = stopSearchFilter
         searchTask?.cancel()
 
         searchTask = Task {
-            guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                searchResults = []
-                return
-            }
-
             isSearching = true
             defer { isSearching = false }
 
             do {
-                searchResults = try await repository.searchStops(query: query)
+                lineResults = try await repository.searchLines(query: query, filter: filter)
                 errorMessage = nil
             } catch {
-                searchResults = []
+                lineResults = []
                 errorMessage = "Unable to search stops."
             }
+        }
+    }
+
+    func scheduleLineSearch(clearingSelection: Bool = false) {
+        Task { @MainActor in
+            if clearingSelection {
+                clearSelectedLine()
+            }
+            searchLines()
+        }
+    }
+
+    func selectLine(_ line: TransitLine) {
+        selectedLine = line
+        lineStops = []
+
+        Task {
+            isLoadingLineStops = true
+            defer { isLoadingLineStops = false }
+
+            do {
+                lineStops = try await repository.getStops(lineId: line.id)
+                errorMessage = nil
+            } catch {
+                lineStops = []
+                errorMessage = "Unable to load stops."
+            }
+        }
+    }
+
+    func clearSelectedLine() {
+        if selectedLine != nil {
+            selectedLine = nil
+        }
+        if !lineStops.isEmpty {
+            lineStops = []
         }
     }
 
@@ -108,9 +155,19 @@ final class TransitBarViewModel: ObservableObject {
     }
 
     func minutesText(for date: Date) -> String {
-        let seconds = max(0, Int(date.timeIntervalSince(Date())))
-        let minutes = max(0, seconds / 60)
-        return "\(minutes)m"
+        let seconds = max(0, Int(date.timeIntervalSince(displayDate)))
+        if seconds < 5 * 60 {
+            let minutes = seconds / 60
+            let remainingSeconds = seconds % 60
+
+            if minutes == 0 {
+                return "\(remainingSeconds)s"
+            }
+
+            return "\(minutes)m \(remainingSeconds)s"
+        }
+
+        return "\(seconds / 60)m"
     }
 
     func formattedDepartureLine(for departure: Departure) -> String {
@@ -150,6 +207,16 @@ final class TransitBarViewModel: ObservableObject {
                 let interval = settingsStore.refreshInterval
                 try? await Task.sleep(for: .seconds(interval))
                 await loadDepartures()
+            }
+        }
+    }
+
+    private func startDisplayClock() {
+        displayClockTask?.cancel()
+        displayClockTask = Task {
+            while !Task.isCancelled {
+                displayDate = Date()
+                try? await Task.sleep(for: .seconds(1))
             }
         }
     }

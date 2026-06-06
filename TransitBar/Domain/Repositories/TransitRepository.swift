@@ -1,6 +1,7 @@
 import Foundation
 
 protocol TransitRepository: Sendable {
-    func searchStops(query: String) async throws -> [TransitStop]
+    func searchLines(query: String, filter: StopSearchFilter) async throws -> [TransitLine]
+    func getStops(lineId: String) async throws -> [TransitStop]
     func getDepartures(stopId: String) async throws -> [Departure]
 }

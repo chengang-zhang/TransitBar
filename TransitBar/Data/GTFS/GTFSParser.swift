@@ -12,13 +12,13 @@ struct GTFSParser {
         self.calendar = calendar
     }
 
-    func parse(directoryURL: URL) throws -> GTFSSchedule {
-        let stops = try parseStops(read("stops.txt", in: directoryURL))
-        let routes = try parseRoutes(read("routes.txt", in: directoryURL))
-        let trips = try parseTrips(read("trips.txt", in: directoryURL))
-        let stopTimes = try parseStopTimes(read("stop_times.txt", in: directoryURL))
-        let calendars = try parseCalendars(read("calendar.txt", in: directoryURL))
-        let calendarDates = try parseCalendarDates(read("calendar_dates.txt", in: directoryURL))
+    func parse(directoryURL: URL, feedId: String, feedName: String) throws -> GTFSSchedule {
+        let stops = try parseStops(read("stops.txt", in: directoryURL), feedId: feedId, feedName: feedName)
+        let routes = try parseRoutes(read("routes.txt", in: directoryURL), feedId: feedId, feedName: feedName)
+        let trips = try parseTrips(read("trips.txt", in: directoryURL), feedId: feedId)
+        let stopTimes = try parseStopTimes(read("stop_times.txt", in: directoryURL), feedId: feedId)
+        let calendars = try parseCalendars(read("calendar.txt", in: directoryURL), feedId: feedId)
+        let calendarDates = try parseCalendarDates(read("calendar_dates.txt", in: directoryURL), feedId: feedId)
 
         return GTFSSchedule(
             stops: Dictionary(uniqueKeysWithValues: stops.map { ($0.id, $0) }),
@@ -42,25 +42,40 @@ struct GTFSParser {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    private func parseStops(_ text: String) throws -> [GTFSStop] {
+    private func parseStops(_ text: String, feedId: String, feedName: String) throws -> [GTFSStop] {
         CSVTable(text: text).rows.compactMap { row in
             guard let id = row["stop_id"], let name = row["stop_name"] else { return nil }
-            return GTFSStop(id: id, name: name)
-        }
-    }
-
-    private func parseRoutes(_ text: String) throws -> [GTFSRoute] {
-        CSVTable(text: text).rows.compactMap { row in
-            guard let id = row["route_id"] else { return nil }
-            return GTFSRoute(
-                id: id,
-                shortName: row["route_short_name"] ?? "",
-                longName: row["route_long_name"] ?? ""
+            return GTFSStop(
+                id: namespaced(id, feedId: feedId),
+                code: row["stop_code"] ?? "",
+                name: name,
+                description: row["stop_desc"] ?? "",
+                locationType: Int(row["location_type"] ?? ""),
+                parentStation: namespacedIfPresent(row["parent_station"] ?? "", feedId: feedId),
+                platformCode: row["platform_code"] ?? "",
+                feedName: feedName
             )
         }
     }
 
-    private func parseTrips(_ text: String) throws -> [GTFSTrip] {
+    private func parseRoutes(_ text: String, feedId: String, feedName: String) throws -> [GTFSRoute] {
+        CSVTable(text: text).rows.compactMap { row in
+            guard let id = row["route_id"] else { return nil }
+            return GTFSRoute(
+                id: namespaced(id, feedId: feedId),
+                feedId: feedId,
+                feedName: feedName,
+                shortName: row["route_short_name"] ?? "",
+                longName: row["route_long_name"] ?? "",
+                routeDescription: row["route_desc"] ?? "",
+                routeType: Int(row["route_type"] ?? ""),
+                colorHex: row["route_color"] ?? "",
+                textColorHex: row["route_text_color"] ?? ""
+            )
+        }
+    }
+
+    private func parseTrips(_ text: String, feedId: String) throws -> [GTFSTrip] {
         CSVTable(text: text).rows.compactMap { row in
             guard
                 let id = row["trip_id"],
@@ -69,15 +84,15 @@ struct GTFSParser {
             else { return nil }
 
             return GTFSTrip(
-                id: id,
-                routeId: routeId,
-                serviceId: serviceId,
+                id: namespaced(id, feedId: feedId),
+                routeId: namespaced(routeId, feedId: feedId),
+                serviceId: namespaced(serviceId, feedId: feedId),
                 headsign: row["trip_headsign"] ?? ""
             )
         }
     }
 
-    private func parseStopTimes(_ text: String) throws -> [GTFSStopTime] {
+    private func parseStopTimes(_ text: String, feedId: String) throws -> [GTFSStopTime] {
         CSVTable(text: text).rows.compactMap { row in
             guard
                 let tripId = row["trip_id"],
@@ -87,15 +102,15 @@ struct GTFSParser {
             else { return nil }
 
             return GTFSStopTime(
-                tripId: tripId,
-                stopId: stopId,
+                tripId: namespaced(tripId, feedId: feedId),
+                stopId: namespaced(stopId, feedId: feedId),
                 departureSeconds: departureSeconds,
                 sequence: Int(row["stop_sequence"] ?? "") ?? 0
             )
         }
     }
 
-    private func parseCalendars(_ text: String) throws -> [GTFSCalendar] {
+    private func parseCalendars(_ text: String, feedId: String) throws -> [GTFSCalendar] {
         try CSVTable(text: text).rows.compactMap { row in
             guard
                 let serviceId = row["service_id"],
@@ -104,7 +119,7 @@ struct GTFSParser {
             else { return nil }
 
             return GTFSCalendar(
-                serviceId: serviceId,
+                serviceId: namespaced(serviceId, feedId: feedId),
                 activeWeekdays: activeWeekdays(from: row),
                 startDate: try parseGTFSDate(start),
                 endDate: try parseGTFSDate(end)
@@ -112,7 +127,7 @@ struct GTFSParser {
         }
     }
 
-    private func parseCalendarDates(_ text: String) throws -> [GTFSCalendarDate] {
+    private func parseCalendarDates(_ text: String, feedId: String) throws -> [GTFSCalendarDate] {
         try CSVTable(text: text).rows.compactMap { row in
             guard
                 let serviceId = row["service_id"],
@@ -122,7 +137,7 @@ struct GTFSParser {
             else { return nil }
 
             return GTFSCalendarDate(
-                serviceId: serviceId,
+                serviceId: namespaced(serviceId, feedId: feedId),
                 date: try parseGTFSDate(date),
                 exceptionType: exceptionType
             )
@@ -164,5 +179,13 @@ struct GTFSParser {
         }
 
         return date
+    }
+
+    private func namespaced(_ value: String, feedId: String) -> String {
+        "\(feedId):\(value)"
+    }
+
+    private func namespacedIfPresent(_ value: String, feedId: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : namespaced(value, feedId: feedId)
     }
 }

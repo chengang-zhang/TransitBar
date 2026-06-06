@@ -2,13 +2,57 @@ import Foundation
 
 struct GTFSStop: Sendable {
     let id: String
+    let code: String
     let name: String
+    let description: String
+    let locationType: Int?
+    let parentStation: String
+    let platformCode: String
+    let feedName: String
+
+    var searchDisplayName: String {
+        var displayName = name
+
+        let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedDescription.isEmpty,
+           trimmedDescription.localizedCaseInsensitiveContains(name),
+           !trimmedDescription.localizedCaseInsensitiveContains("Station -") {
+            let detail = trimmedDescription
+                .replacingOccurrences(of: name, with: "", options: [.caseInsensitive, .anchored])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if !detail.isEmpty {
+                displayName = "\(name) - \(detail)"
+            }
+        }
+
+        let trimmedPlatform = platformCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedPlatform.isEmpty,
+           !displayName.localizedCaseInsensitiveContains("bay \(trimmedPlatform)"),
+           !displayName.localizedCaseInsensitiveContains("platform \(trimmedPlatform)") {
+            displayName += " (Platform \(trimmedPlatform))"
+        }
+
+        return displayName
+    }
+
+    var disambiguatedSearchDisplayName: String {
+        let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffix = trimmedCode.isEmpty ? feedName : "\(feedName) #\(trimmedCode)"
+        return "\(searchDisplayName) - \(suffix)"
+    }
 }
 
 struct GTFSRoute: Sendable {
     let id: String
+    let feedId: String
+    let feedName: String
     let shortName: String
     let longName: String
+    let routeDescription: String
+    let routeType: Int?
+    let colorHex: String
+    let textColorHex: String
 
     var displayName: String {
         if !shortName.isEmpty { return shortName }

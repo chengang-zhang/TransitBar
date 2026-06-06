@@ -272,4 +272,6 @@ V0 is implemented as a macOS SwiftUI `MenuBarExtra` app with:
 - `UserDefaults` persistence
 - 60 second refresh timer
 
-The sample GTFS feed lives at `TransitBar/Resources/GTFS`. Replace those files with a real feed to use live schedule data for a specific agency.
+The bundled GTFS feed lives at `TransitBar/Resources/GTFS`. V0 currently packages Sound Transit's static schedule feed.
+
+Reusable transit badge SVGs live at `SharedAssets/TransitIcons`. The macOS app renders route badges from GTFS route metadata at runtime, while the SVGs provide portable assets for future iOS, Android, and web clients.
