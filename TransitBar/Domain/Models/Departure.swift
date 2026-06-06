@@ -1,6 +1,6 @@
 import Foundation
 
-struct Departure: Identifiable, Equatable, Sendable {
+nonisolated struct Departure: Identifiable, Equatable, Sendable {
     let id: String
     let routeName: String
     let destination: String

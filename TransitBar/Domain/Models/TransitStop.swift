@@ -1,6 +1,6 @@
 import Foundation
 
-struct TransitStop: Identifiable, Equatable, Sendable {
+nonisolated struct TransitStop: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
 }

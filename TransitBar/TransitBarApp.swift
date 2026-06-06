@@ -12,14 +12,7 @@ struct TransitBarApp: App {
     @StateObject private var viewModel: TransitBarViewModel
 
     init() {
-        let repository: TransitRepository
-        do {
-            repository = try StaticGtfsTransitRepository()
-        } catch {
-            repository = FailingTransitRepository(error: error)
-        }
-
-        _viewModel = StateObject(wrappedValue: TransitBarViewModel(repository: repository))
+        _viewModel = StateObject(wrappedValue: TransitBarViewModel(repository: LazyStaticGtfsTransitRepository()))
     }
 
     var body: some Scene {

@@ -1,6 +1,6 @@
 import Foundation
 
-enum GTFSTime {
+nonisolated enum GTFSTime {
     static func seconds(from text: String) -> Int? {
         let parts = text.split(separator: ":").compactMap { Int($0) }
         guard parts.count == 3 else { return nil }

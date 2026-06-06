@@ -1,11 +1,11 @@
 import Foundation
 
-enum GTFSParserError: Error {
+nonisolated enum GTFSParserError: Error {
     case missingFile(String)
     case invalidDate(String)
 }
 
-struct GTFSParser {
+nonisolated struct GTFSParser {
     private let calendar: Calendar
 
     init(calendar: Calendar = .current) {

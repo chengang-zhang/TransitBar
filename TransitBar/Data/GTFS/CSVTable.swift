@@ -1,6 +1,6 @@
 import Foundation
 
-struct CSVTable {
+nonisolated struct CSVTable {
     let rows: [[String: String]]
 
     init(text: String) {

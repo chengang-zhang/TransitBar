@@ -1,6 +1,6 @@
 import Foundation
 
-final class StaticGtfsTransitRepository: TransitRepository, @unchecked Sendable {
+nonisolated final class StaticGtfsTransitRepository: TransitRepository, @unchecked Sendable {
     private let schedule: GTFSSchedule
     private let calendar: Calendar
     private let horizon: TimeInterval
@@ -280,12 +280,41 @@ final class StaticGtfsTransitRepository: TransitRepository, @unchecked Sendable 
     }
 }
 
+actor LazyStaticGtfsTransitRepository: TransitRepository {
+    private var repository: StaticGtfsTransitRepository?
+
+    func searchLines(query: String, filter: StopSearchFilter) async throws -> [TransitLine] {
+        let repository = try loadedRepository()
+        return try await repository.searchLines(query: query, filter: filter)
+    }
+
+    func getStops(lineId: String) async throws -> [TransitStop] {
+        let repository = try loadedRepository()
+        return try await repository.getStops(lineId: lineId)
+    }
+
+    func getDepartures(stopId: String) async throws -> [Departure] {
+        let repository = try loadedRepository()
+        return try await repository.getDepartures(stopId: stopId)
+    }
+
+    private func loadedRepository() throws -> StaticGtfsTransitRepository {
+        if let repository {
+            return repository
+        }
+
+        let repository = try StaticGtfsTransitRepository()
+        self.repository = repository
+        return repository
+    }
+}
+
 private struct StopPattern {
     let stopIds: [String]
     var tripCount: Int
 }
 
-struct GTFSFeedResource: Sendable {
+nonisolated struct GTFSFeedResource: Sendable {
     let id: String
     let directoryName: String
     let displayName: String
@@ -304,7 +333,7 @@ struct GTFSFeedResource: Sendable {
     ]
 }
 
-private extension GTFSSchedule {
+private nonisolated extension GTFSSchedule {
     static func merging(_ schedules: [GTFSSchedule]) -> GTFSSchedule {
         GTFSSchedule(
             stops: schedules.reduce(into: [:]) { $0.merge($1.stops) { current, _ in current } },

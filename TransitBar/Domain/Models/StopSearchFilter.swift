@@ -1,6 +1,6 @@
 import Foundation
 
-enum StopSearchFilter: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum StopSearchFilter: String, CaseIterable, Identifiable, Sendable {
     case all
     case rail
     case bus

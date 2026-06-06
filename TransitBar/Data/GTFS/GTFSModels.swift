@@ -1,6 +1,6 @@
 import Foundation
 
-struct GTFSStop: Sendable {
+nonisolated struct GTFSStop: Sendable {
     let id: String
     let code: String
     let name: String
@@ -43,7 +43,7 @@ struct GTFSStop: Sendable {
     }
 }
 
-struct GTFSRoute: Sendable {
+nonisolated struct GTFSRoute: Sendable {
     let id: String
     let feedId: String
     let feedName: String
@@ -61,34 +61,34 @@ struct GTFSRoute: Sendable {
     }
 }
 
-struct GTFSTrip: Sendable {
+nonisolated struct GTFSTrip: Sendable {
     let id: String
     let routeId: String
     let serviceId: String
     let headsign: String
 }
 
-struct GTFSStopTime: Sendable {
+nonisolated struct GTFSStopTime: Sendable {
     let tripId: String
     let stopId: String
     let departureSeconds: Int
     let sequence: Int
 }
 
-struct GTFSCalendar: Sendable {
+nonisolated struct GTFSCalendar: Sendable {
     let serviceId: String
     let activeWeekdays: Set<Int>
     let startDate: Date
     let endDate: Date
 }
 
-struct GTFSCalendarDate: Sendable {
+nonisolated struct GTFSCalendarDate: Sendable {
     let serviceId: String
     let date: Date
     let exceptionType: Int
 }
 
-struct GTFSSchedule: Sendable {
+nonisolated struct GTFSSchedule: Sendable {
     let stops: [String: GTFSStop]
     let routes: [String: GTFSRoute]
     let trips: [String: GTFSTrip]
