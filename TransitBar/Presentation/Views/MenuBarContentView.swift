@@ -35,13 +35,7 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            Button("Add Favorite Stop") {
-                openWindow(id: "favorites")
-            }
-            .buttonStyle(.plain)
-            .frame(width: contentWidth, alignment: .leading)
-
-            Button("Manage Favorites") {
+            Button("Open TransitBar") {
                 openWindow(id: "favorites")
             }
             .buttonStyle(.plain)

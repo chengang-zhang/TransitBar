@@ -67,13 +67,13 @@ enum RouteBadgeImageFactory {
             NSBezierPath(roundedRect: badgeRect, xRadius: 4, yRadius: 4).fill()
         }
 
-        let token = routeToken(routeName: routeName)
+        let token = routeToken(routeName: routeName, routeType: routeType)
         let fontSize: CGFloat = usesCircularBadge(routeName: routeName, routeType: routeType) ? 12 : 10
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
             .foregroundColor: foregroundColor
         ]
-        let attributedToken = NSAttributedString(string: token, attributes: attributes)
+        let attributedToken = NSAttributedString(string: fittedToken(token, maxWidth: size.width - 10, attributes: attributes), attributes: attributes)
         let tokenSize = attributedToken.size()
         let tokenOrigin = CGPoint(
             x: (size.width - tokenSize.width) / 2,
@@ -85,11 +85,14 @@ enum RouteBadgeImageFactory {
     }
 
     static func routeToken(for departure: Departure) -> String {
-        routeToken(routeName: departure.routeName)
+        routeToken(routeName: departure.routeName, routeType: departure.routeType)
     }
 
-    private static func routeToken(routeName: String) -> String {
+    private static func routeToken(routeName: String, routeType: Int?) -> String {
         let trimmed = routeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if routeType == 4, trimmed.count > 6 {
+            return "Ferry"
+        }
         if trimmed.localizedCaseInsensitiveContains("line") {
             return trimmed
                 .replacingOccurrences(of: " Line", with: "", options: .caseInsensitive)
@@ -99,12 +102,32 @@ enum RouteBadgeImageFactory {
     }
 
     private static func usesCircularBadge(routeName: String, routeType: Int?) -> Bool {
-        routeToken(routeName: routeName).count <= 2 && routeType != 3
+        routeToken(routeName: routeName, routeType: routeType).count <= 2 && routeType != 3 && routeType != 4
+    }
+
+    private static func fittedToken(_ token: String, maxWidth: CGFloat, attributes: [NSAttributedString.Key: Any]) -> String {
+        if NSAttributedString(string: token, attributes: attributes).size().width <= maxWidth {
+            return token
+        }
+
+        var truncated = token
+        while truncated.count > 1 {
+            truncated.removeLast()
+            let candidate = "\(truncated)..."
+            if NSAttributedString(string: candidate, attributes: attributes).size().width <= maxWidth {
+                return candidate
+            }
+        }
+
+        return token
     }
 
     private static func fallbackRouteColor(routeType: Int?) -> NSColor {
         if routeType == 3 {
             return NSColor(calibratedRed: 0.0, green: 0.48, blue: 0.73, alpha: 1)
+        }
+        if routeType == 4 {
+            return NSColor(calibratedRed: 0.0, green: 0.42, blue: 0.50, alpha: 1)
         }
         return .controlAccentColor
     }

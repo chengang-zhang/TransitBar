@@ -38,9 +38,9 @@ struct TransitBarApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("Favorites", id: "favorites") {
+        Window("TransitBar", id: "favorites") {
             FavoritesWindowView(viewModel: viewModel)
         }
-        .defaultSize(width: 760, height: 460)
+        .defaultSize(width: 1080, height: 560)
     }
 }

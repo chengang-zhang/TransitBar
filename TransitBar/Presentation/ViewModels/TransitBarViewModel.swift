@@ -8,10 +8,13 @@ final class TransitBarViewModel: ObservableObject {
     @Published private(set) var departureSections: [StopDeparturesSection] = []
     @Published private(set) var lineResults: [TransitLine] = []
     @Published private(set) var selectedLine: TransitLine?
+    @Published private(set) var selectedLineStop: TransitStop?
     @Published private(set) var lineStops: [TransitStop] = []
+    @Published private(set) var selectedLineStopDepartures: [Departure] = []
     @Published private(set) var isLoadingDepartures = false
     @Published private(set) var isSearching = false
     @Published private(set) var isLoadingLineStops = false
+    @Published private(set) var isLoadingLineStopDepartures = false
     @Published private(set) var errorMessage: String?
     @Published private var displayDate = Date()
     @Published var searchQuery = ""
@@ -22,6 +25,18 @@ final class TransitBarViewModel: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var displayClockTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
+    private var lineStopDeparturesTask: Task<Void, Never>?
+    private lazy var sameDayDepartureFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
+    private lazy var futureDayDepartureFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("EEE h:mm a")
+        return formatter
+    }()
 
     init(repository: TransitRepository, settingsStore: UserSettingsStore = UserSettingsStore()) {
         self.repository = repository
@@ -37,6 +52,7 @@ final class TransitBarViewModel: ObservableObject {
         refreshTask?.cancel()
         displayClockTask?.cancel()
         searchTask?.cancel()
+        lineStopDeparturesTask?.cancel()
     }
 
     var menuBarTitle: String {
@@ -98,9 +114,10 @@ final class TransitBarViewModel: ObservableObject {
     func selectLine(_ line: TransitLine) {
         selectedLine = line
         lineStops = []
+        clearSelectedLineStop()
+        isLoadingLineStops = true
 
         Task {
-            isLoadingLineStops = true
             defer { isLoadingLineStops = false }
 
             do {
@@ -113,6 +130,33 @@ final class TransitBarViewModel: ObservableObject {
         }
     }
 
+    func selectLineStop(_ stop: TransitStop) {
+        selectedLineStop = stop
+        selectedLineStopDepartures = []
+        isLoadingLineStopDepartures = true
+        lineStopDeparturesTask?.cancel()
+
+        let stopId = stop.id
+        lineStopDeparturesTask = Task {
+            defer {
+                if selectedLineStop?.id == stopId {
+                    isLoadingLineStopDepartures = false
+                }
+            }
+
+            do {
+                let departures = try await repository.getDepartures(stopId: stopId)
+                guard selectedLineStop?.id == stopId else { return }
+                selectedLineStopDepartures = departures
+                errorMessage = nil
+            } catch {
+                guard selectedLineStop?.id == stopId else { return }
+                selectedLineStopDepartures = []
+                errorMessage = "Unable to load arrivals."
+            }
+        }
+    }
+
     func clearSelectedLine() {
         if selectedLine != nil {
             selectedLine = nil
@@ -120,6 +164,18 @@ final class TransitBarViewModel: ObservableObject {
         if !lineStops.isEmpty {
             lineStops = []
         }
+        clearSelectedLineStop()
+    }
+
+    private func clearSelectedLineStop() {
+        lineStopDeparturesTask?.cancel()
+        if selectedLineStop != nil {
+            selectedLineStop = nil
+        }
+        if !selectedLineStopDepartures.isEmpty {
+            selectedLineStopDepartures = []
+        }
+        isLoadingLineStopDepartures = false
     }
 
     func addFavorite(from stop: TransitStop) {
@@ -165,6 +221,14 @@ final class TransitBarViewModel: ObservableObject {
             }
 
             return "\(minutes)m \(remainingSeconds)s"
+        }
+
+        if seconds > 60 * 60 {
+            if Calendar.current.isDate(date, inSameDayAs: displayDate) {
+                return sameDayDepartureFormatter.string(from: date)
+            }
+
+            return futureDayDepartureFormatter.string(from: date)
         }
 
         return "\(seconds / 60)m"
