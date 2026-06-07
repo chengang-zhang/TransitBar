@@ -6,8 +6,9 @@ struct FavoritesWindowView: View {
     @State private var visibleDepartureCountsByStopId: [String: Int] = [:]
     @State private var visibleLineStopDepartureCount = 3
 
-    private let defaultVisibleDepartureCount = 3
     private let departureExpansionIncrement = 3
+    private let refreshIntervals: [TimeInterval] = [30, 60, 120, 300]
+    private let maxDepartureOptions = Array(1...6)
     private let lineGridColumns = [
         GridItem(.adaptive(minimum: 104, maximum: 118), spacing: 12)
     ]
@@ -15,6 +16,7 @@ struct FavoritesWindowView: View {
     init(viewModel: TransitBarViewModel) {
         self.viewModel = viewModel
         _selectedSection = State(initialValue: viewModel.favorites.isEmpty ? .browse : .favorites)
+        _visibleLineStopDepartureCount = State(initialValue: viewModel.maxDeparturesPerStop)
     }
 
     private var lineSections: [LineResultSection] {
@@ -60,6 +62,9 @@ struct FavoritesWindowView: View {
         case .browse:
             searchPanel
                 .navigationTitle("Browse")
+        case .settings:
+            settingsPanel
+                .navigationTitle("Settings")
         }
     }
 
@@ -119,7 +124,7 @@ struct FavoritesWindowView: View {
                                         .font(.caption)
                                     }
 
-                                    if section.departures.count > defaultVisibleDepartureCount {
+                                    if section.departures.count > viewModel.maxDeparturesPerStop {
                                         HStack(spacing: 12) {
                                             if visibleDepartureLimit(for: favorite) < section.departures.count {
                                                 Button("See more arrivals") {
@@ -128,7 +133,7 @@ struct FavoritesWindowView: View {
                                                 .buttonStyle(.borderless)
                                             }
 
-                                            if visibleDepartureLimit(for: favorite) > defaultVisibleDepartureCount {
+                                            if visibleDepartureLimit(for: favorite) > viewModel.maxDeparturesPerStop {
                                                 Button("Collapse") {
                                                     collapseDepartures(for: favorite)
                                                 }
@@ -152,6 +157,47 @@ struct FavoritesWindowView: View {
             }
         }
         .padding()
+    }
+
+    private var settingsPanel: some View {
+        Form {
+            Picker(
+                "Refresh",
+                selection: Binding(
+                    get: { viewModel.refreshInterval },
+                    set: { viewModel.setRefreshInterval($0) }
+                )
+            ) {
+                ForEach(refreshIntervals, id: \.self) { interval in
+                    Text(refreshIntervalTitle(interval)).tag(interval)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Toggle(
+                "Show seconds under 5 minutes",
+                isOn: Binding(
+                    get: { viewModel.showsSecondsForNearDepartures },
+                    set: { viewModel.setShowsSecondsForNearDepartures($0) }
+                )
+            )
+
+            Picker(
+                "Arrivals per stop",
+                selection: Binding(
+                    get: { viewModel.maxDeparturesPerStop },
+                    set: { viewModel.setMaxDeparturesPerStop($0) }
+                )
+            ) {
+                ForEach(maxDepartureOptions, id: \.self) { count in
+                    Text("\(count)").tag(count)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .formStyle(.grouped)
+        .padding()
+        .frame(maxWidth: 520, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var searchPanel: some View {
@@ -207,7 +253,7 @@ struct FavoritesWindowView: View {
     }
 
     private func visibleDepartureLimit(for favorite: FavoriteStop) -> Int {
-        visibleDepartureCountsByStopId[favorite.stopId] ?? defaultVisibleDepartureCount
+        visibleDepartureCountsByStopId[favorite.stopId] ?? viewModel.maxDeparturesPerStop
     }
 
     private func showMoreDepartures(for favorite: FavoriteStop, totalCount: Int) {
@@ -216,7 +262,7 @@ struct FavoritesWindowView: View {
     }
 
     private func collapseDepartures(for favorite: FavoriteStop) {
-        visibleDepartureCountsByStopId[favorite.stopId] = defaultVisibleDepartureCount
+        visibleDepartureCountsByStopId[favorite.stopId] = viewModel.maxDeparturesPerStop
     }
 
     private var routeResultsPane: some View {
@@ -324,7 +370,7 @@ struct FavoritesWindowView: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Button {
-                    visibleLineStopDepartureCount = defaultVisibleDepartureCount
+                    visibleLineStopDepartureCount = viewModel.maxDeparturesPerStop
                     viewModel.selectLineStop(stop)
                 } label: {
                     Text(stop.name)
@@ -381,7 +427,7 @@ struct FavoritesWindowView: View {
                     .font(.caption)
                 }
 
-                if viewModel.selectedLineStopDepartures.count > defaultVisibleDepartureCount {
+                if viewModel.selectedLineStopDepartures.count > viewModel.maxDeparturesPerStop {
                     HStack(spacing: 12) {
                         if visibleLineStopDepartureCount < viewModel.selectedLineStopDepartures.count {
                             Button("See more arrivals") {
@@ -390,7 +436,7 @@ struct FavoritesWindowView: View {
                             .buttonStyle(.borderless)
                         }
 
-                        if visibleLineStopDepartureCount > defaultVisibleDepartureCount {
+                        if visibleLineStopDepartureCount > viewModel.maxDeparturesPerStop {
                             Button("Collapse") {
                                 collapseLineStopDepartures()
                             }
@@ -416,7 +462,22 @@ struct FavoritesWindowView: View {
     }
 
     private func collapseLineStopDepartures() {
-        visibleLineStopDepartureCount = defaultVisibleDepartureCount
+        visibleLineStopDepartureCount = viewModel.maxDeparturesPerStop
+    }
+
+    private func refreshIntervalTitle(_ interval: TimeInterval) -> String {
+        switch interval {
+        case 30:
+            return "30s"
+        case 60:
+            return "1m"
+        case 120:
+            return "2m"
+        case 300:
+            return "5m"
+        default:
+            return "\(Int(interval))s"
+        }
     }
 }
 
@@ -430,6 +491,7 @@ private struct LineResultSection: Identifiable {
 private enum TransitBarSection: String, CaseIterable, Identifiable {
     case favorites
     case browse
+    case settings
 
     var id: Self { self }
 
@@ -439,6 +501,8 @@ private enum TransitBarSection: String, CaseIterable, Identifiable {
             return "Favorites"
         case .browse:
             return "Browse"
+        case .settings:
+            return "Settings"
         }
     }
 
@@ -448,6 +512,8 @@ private enum TransitBarSection: String, CaseIterable, Identifiable {
             return "star"
         case .browse:
             return "point.topleft.down.curvedto.point.bottomright.up"
+        case .settings:
+            return "gearshape"
         }
     }
 }

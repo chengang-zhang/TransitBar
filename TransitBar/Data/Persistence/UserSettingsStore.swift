@@ -6,6 +6,8 @@ final class UserSettingsStore {
         static let primaryStopId = "primaryStopId"
         static let refreshInterval = "refreshInterval"
         static let launchAtLogin = "launchAtLogin"
+        static let showsSecondsForNearDepartures = "showsSecondsForNearDepartures"
+        static let maxDeparturesPerStop = "maxDeparturesPerStop"
     }
 
     private let defaults: UserDefaults
@@ -43,5 +45,21 @@ final class UserSettingsStore {
     var launchAtLogin: Bool {
         get { defaults.bool(forKey: Key.launchAtLogin) }
         set { defaults.set(newValue, forKey: Key.launchAtLogin) }
+    }
+
+    var showsSecondsForNearDepartures: Bool {
+        get {
+            guard defaults.object(forKey: Key.showsSecondsForNearDepartures) != nil else { return true }
+            return defaults.bool(forKey: Key.showsSecondsForNearDepartures)
+        }
+        set { defaults.set(newValue, forKey: Key.showsSecondsForNearDepartures) }
+    }
+
+    var maxDeparturesPerStop: Int {
+        get {
+            let value = defaults.integer(forKey: Key.maxDeparturesPerStop)
+            return value > 0 ? value : 3
+        }
+        set { defaults.set(max(1, min(newValue, 12)), forKey: Key.maxDeparturesPerStop) }
     }
 }

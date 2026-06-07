@@ -16,6 +16,9 @@ final class TransitBarViewModel: ObservableObject {
     @Published private(set) var isLoadingLineStops = false
     @Published private(set) var isLoadingLineStopDepartures = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var refreshInterval: TimeInterval
+    @Published private(set) var showsSecondsForNearDepartures: Bool
+    @Published private(set) var maxDeparturesPerStop: Int
     @Published private var displayDate = Date()
     @Published var searchQuery = ""
     @Published var stopSearchFilter: StopSearchFilter = .all
@@ -43,6 +46,9 @@ final class TransitBarViewModel: ObservableObject {
         self.settingsStore = settingsStore
         self.favorites = settingsStore.favorites
         self.primaryStopId = settingsStore.primaryStopId
+        self.refreshInterval = settingsStore.refreshInterval
+        self.showsSecondsForNearDepartures = settingsStore.showsSecondsForNearDepartures
+        self.maxDeparturesPerStop = settingsStore.maxDeparturesPerStop
         ensurePrimaryStop()
         startRefreshTimer()
         startDisplayClock()
@@ -215,9 +221,29 @@ final class TransitBarViewModel: ObservableObject {
         favorite.stopId == primaryStopId
     }
 
+    func setRefreshInterval(_ interval: TimeInterval) {
+        refreshInterval = interval
+        settingsStore.refreshInterval = interval
+        startRefreshTimer()
+    }
+
+    func setShowsSecondsForNearDepartures(_ showsSeconds: Bool) {
+        showsSecondsForNearDepartures = showsSeconds
+        settingsStore.showsSecondsForNearDepartures = showsSeconds
+    }
+
+    func setMaxDeparturesPerStop(_ count: Int) {
+        maxDeparturesPerStop = max(1, min(count, 12))
+        settingsStore.maxDeparturesPerStop = maxDeparturesPerStop
+    }
+
     func minutesText(for date: Date) -> String {
         let seconds = max(0, Int(date.timeIntervalSince(displayDate)))
         if seconds < 5 * 60 {
+            guard showsSecondsForNearDepartures else {
+                return "\(max(1, (seconds + 59) / 60))m"
+            }
+
             let minutes = seconds / 60
             let remainingSeconds = seconds % 60
 
@@ -279,8 +305,7 @@ final class TransitBarViewModel: ObservableObject {
             await loadDepartures()
 
             while !Task.isCancelled {
-                let interval = settingsStore.refreshInterval
-                try? await Task.sleep(for: .seconds(interval))
+                try? await Task.sleep(for: .seconds(refreshInterval))
                 await loadDepartures()
             }
         }
@@ -306,6 +331,5 @@ final class TransitBarViewModel: ObservableObject {
     private func persistFavorites() {
         settingsStore.favorites = favorites
         settingsStore.primaryStopId = primaryStopId
-        settingsStore.refreshInterval = 60
     }
 }

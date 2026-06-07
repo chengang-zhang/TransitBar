@@ -86,7 +86,7 @@ struct MenuBarContentView: View {
                     Text("No scheduled departures found.")
                         .foregroundStyle(.primary.opacity(0.72))
                 } else {
-                    ForEach(section.departures.prefix(2)) { departure in
+                    ForEach(section.departures.prefix(viewModel.maxDeparturesPerStop)) { departure in
                         let badgeWidth = RouteBadgeImageFactory.size(for: departure).width
 
                         HStack(alignment: .center, spacing: departureRowSpacing) {
