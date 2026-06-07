@@ -45,6 +45,7 @@ Commuter quality-of-life features:
 - Keyboard shortcuts
 - Notifications
 - Quick stop switching
+- Recently viewed stops and routes
 
 ## Non Goals
 
@@ -276,3 +277,7 @@ V0 is implemented as a macOS SwiftUI `MenuBarExtra` app with:
 The bundled GTFS feed lives at `TransitBar/Resources/GTFS`. V0 currently packages Sound Transit's static schedule feed.
 
 Reusable transit badge SVGs live at `SharedAssets/TransitIcons`. The macOS app renders route badges from GTFS route metadata at runtime, while the SVGs provide portable assets for future iOS, Android, and web clients.
+
+## TODO
+
+- Automate static GTFS feed refreshes with GitHub Actions once the source URL and validation process are finalized. The workflow should download the feed, validate required GTFS files, split oversized `stop_times.txt` data for GitHub compatibility, and open a PR with the updated bundle.
