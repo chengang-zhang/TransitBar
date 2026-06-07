@@ -239,6 +239,12 @@ final class TransitBarViewModel: ObservableObject {
         return "\(seconds / 60)m"
     }
 
+    func departureTimeText(for date: Date) -> String {
+        let text = minutesText(for: date)
+        let seconds = max(0, Int(date.timeIntervalSince(displayDate)))
+        return seconds > 60 * 60 ? "at \(text)" : text
+    }
+
     func formattedDepartureLine(for departure: Departure) -> String {
         "\(departure.routeName) -> \(departure.destination)"
     }

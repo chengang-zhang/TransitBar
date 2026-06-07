@@ -113,7 +113,7 @@ struct FavoritesWindowView: View {
                                             Text(viewModel.formattedDepartureLine(for: departure))
                                                 .lineLimit(1)
                                             Spacer()
-                                            Text(viewModel.minutesText(for: departure.departureTime))
+                                            Text(viewModel.departureTimeText(for: departure.departureTime))
                                                 .foregroundStyle(.secondary)
                                         }
                                         .font(.caption)
@@ -140,7 +140,7 @@ struct FavoritesWindowView: View {
                                     }
                                 }
                             } else {
-                                Text(viewModel.isLoadingDepartures ? "Loading departures..." : "No upcoming departures.")
+                                Text(viewModel.isLoadingDepartures ? "Loading departures..." : "No scheduled departures found.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -364,7 +364,7 @@ struct FavoritesWindowView: View {
             ProgressView()
                 .controlSize(.small)
         } else if viewModel.selectedLineStopDepartures.isEmpty {
-            Text("No upcoming arrivals.")
+            Text("No scheduled arrivals found.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else {
@@ -375,7 +375,7 @@ struct FavoritesWindowView: View {
                         Text(viewModel.formattedDepartureLine(for: departure))
                             .lineLimit(1)
                         Spacer()
-                        Text(viewModel.minutesText(for: departure.departureTime))
+                        Text(viewModel.departureTimeText(for: departure.departureTime))
                             .foregroundStyle(.secondary)
                     }
                     .font(.caption)

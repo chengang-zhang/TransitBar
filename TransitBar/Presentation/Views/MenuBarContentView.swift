@@ -21,7 +21,7 @@ struct MenuBarContentView: View {
                 Text("Add a favorite stop to get started.")
                     .foregroundStyle(.primary)
             } else if viewModel.departureSections.isEmpty {
-                Text(viewModel.isLoadingDepartures ? "Loading departures..." : "No upcoming departures.")
+                Text(viewModel.isLoadingDepartures ? "Loading departures..." : "No scheduled departures found.")
                     .foregroundStyle(.primary.opacity(0.72))
                     .frame(width: contentWidth, alignment: .leading)
             } else if viewModel.departureSections.count > 3 {
@@ -83,7 +83,7 @@ struct MenuBarContentView: View {
                 .frame(width: contentWidth, alignment: .leading)
 
                 if section.departures.isEmpty {
-                    Text("No upcoming departures.")
+                    Text("No scheduled departures found.")
                         .foregroundStyle(.primary.opacity(0.72))
                 } else {
                     ForEach(section.departures.prefix(2)) { departure in
@@ -97,7 +97,7 @@ struct MenuBarContentView: View {
                                 .truncationMode(.tail)
                                 .foregroundStyle(.primary)
                                 .frame(width: departureLineWidth(badgeWidth: badgeWidth), alignment: .leading)
-                            Text(viewModel.minutesText(for: departure.departureTime))
+                            Text(viewModel.departureTimeText(for: departure.departureTime))
                                 .monospacedDigit()
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.primary)
