@@ -17,7 +17,6 @@ env:
   PROJECT: TransitBar.xcodeproj
   SCHEME: TransitBar
   APP_NAME: TransitBar
-  DERIVED_DATA: ${{ runner.temp }}/DerivedData
 
 jobs:
   build-and-test:
@@ -28,6 +27,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Set build paths
+        run: echo "DERIVED_DATA=$RUNNER_TEMP/DerivedData" >> "$GITHUB_ENV"
 
       - name: Show Xcode version
         run: xcodebuild -version
@@ -68,6 +70,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Set build paths
+        run: echo "DERIVED_DATA=$RUNNER_TEMP/DerivedData" >> "$GITHUB_ENV"
 
       - name: Show Xcode version
         run: xcodebuild -version
