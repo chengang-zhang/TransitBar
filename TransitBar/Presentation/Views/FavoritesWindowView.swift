@@ -34,14 +34,6 @@ struct FavoritesWindowView: View {
             }
     }
 
-    private var orderedFavorites: [FavoriteStop] {
-        guard let primary = viewModel.favorites.first(where: { viewModel.isPrimary($0) }) else {
-            return viewModel.favorites
-        }
-
-        return [primary] + viewModel.favorites.filter { $0.id != primary.id }
-    }
-
     var body: some View {
         NavigationSplitView {
             sidebar
@@ -87,109 +79,84 @@ struct FavoritesWindowView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(orderedFavorites) { favorite in
-                        favoriteRow(for: favorite)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-                            .listRowBackground(favoriteRowBackground(for: favorite))
+                    ForEach(viewModel.favorites) { favorite in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(favorite.stopName)
+                                        .font(.headline)
+                                        .lineLimit(2)
+
+                                    if viewModel.isPrimary(favorite) {
+                                        Text("Primary stop")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                if !viewModel.isPrimary(favorite) {
+                                    Button("Set Primary") {
+                                        viewModel.setPrimaryStop(favorite)
+                                    }
+                                }
+
+                                Button(role: .destructive) {
+                                    viewModel.removeFavorite(favorite)
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.borderless)
+                            }
+
+                            if let section = departureSection(for: favorite), !section.departures.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(visibleDepartures(in: section, for: favorite)) { departure in
+                                        HStack(spacing: 8) {
+                                            RouteBadgeView(departure: departure)
+                                            Text(viewModel.formattedDepartureLine(for: departure))
+                                                .lineLimit(1)
+                                            Spacer()
+                                            Text(viewModel.departureTimeText(for: departure.departureTime))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .font(.caption)
+                                    }
+
+                                    if section.departures.count > viewModel.maxDeparturesPerStop {
+                                        HStack(spacing: 12) {
+                                            if visibleDepartureLimit(for: favorite) < section.departures.count {
+                                                Button("See more arrivals") {
+                                                    showMoreDepartures(for: favorite, totalCount: section.departures.count)
+                                                }
+                                                .buttonStyle(.borderless)
+                                            }
+
+                                            if visibleDepartureLimit(for: favorite) > viewModel.maxDeparturesPerStop {
+                                                Button("Collapse") {
+                                                    collapseDepartures(for: favorite)
+                                                }
+                                                .buttonStyle(.borderless)
+                                            }
+                                        }
+                                        .font(.caption)
+                                        .padding(.top, 2)
+                                    }
+                                }
+                            } else {
+                                Text(viewModel.isLoadingDepartures ? "Loading departures..." : "No scheduled departures found.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 6)
                     }
                 }
                 .listStyle(.inset)
             }
         }
         .padding()
-    }
-
-    private func favoriteRow(for favorite: FavoriteStop) -> some View {
-        let isPrimary = viewModel.isPrimary(favorite)
-
-        return VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                VStack(alignment: .leading, spacing: 5) {
-                    if isPrimary {
-                        Label("Primary", systemImage: "pin.fill")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tint)
-                            .labelStyle(.titleAndIcon)
-                    }
-
-                    Text(favorite.stopName)
-                        .font(isPrimary ? .title3.weight(.semibold) : .headline)
-                        .lineLimit(2)
-                }
-
-                Spacer()
-
-                if !isPrimary {
-                    Button("Set Primary") {
-                        viewModel.setPrimaryStop(favorite)
-                    }
-                    .buttonStyle(.borderless)
-                }
-
-                Button(role: .destructive) {
-                    viewModel.removeFavorite(favorite)
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.borderless)
-            }
-
-            favoriteDepartures(for: favorite)
-        }
-        .padding(isPrimary ? 10 : 0)
-    }
-
-    @ViewBuilder
-    private func favoriteDepartures(for favorite: FavoriteStop) -> some View {
-        if let section = departureSection(for: favorite), !section.departures.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(visibleDepartures(in: section, for: favorite)) { departure in
-                    HStack(spacing: 8) {
-                        RouteBadgeView(departure: departure)
-                        Text(viewModel.formattedDepartureLine(for: departure))
-                            .lineLimit(1)
-                        Spacer()
-                        Text(viewModel.departureTimeText(for: departure.departureTime))
-                            .foregroundStyle(.secondary)
-                    }
-                    .font(.caption)
-                }
-
-                if section.departures.count > viewModel.maxDeparturesPerStop {
-                    HStack(spacing: 12) {
-                        if visibleDepartureLimit(for: favorite) < section.departures.count {
-                            Button("See more arrivals") {
-                                showMoreDepartures(for: favorite, totalCount: section.departures.count)
-                            }
-                            .buttonStyle(.borderless)
-                        }
-
-                        if visibleDepartureLimit(for: favorite) > viewModel.maxDeparturesPerStop {
-                            Button("Collapse") {
-                                collapseDepartures(for: favorite)
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                    }
-                    .font(.caption)
-                    .padding(.top, 2)
-                }
-            }
-        } else {
-            Text(viewModel.isLoadingDepartures ? "Loading departures..." : "No scheduled departures found.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    @ViewBuilder
-    private func favoriteRowBackground(for favorite: FavoriteStop) -> some View {
-        if viewModel.isPrimary(favorite) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.accentColor.opacity(0.10))
-        } else {
-            Color.clear
-        }
     }
 
     private var settingsPanel: some View {
