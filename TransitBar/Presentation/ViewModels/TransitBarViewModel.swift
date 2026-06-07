@@ -131,6 +131,11 @@ final class TransitBarViewModel: ObservableObject {
     }
 
     func selectLineStop(_ stop: TransitStop) {
+        if selectedLineStop?.id == stop.id {
+            clearSelectedLineStop()
+            return
+        }
+
         selectedLineStop = stop
         selectedLineStopDepartures = []
         isLoadingLineStopDepartures = true

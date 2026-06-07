@@ -19,6 +19,32 @@ struct TransitBarTests {
     }
 
     @MainActor
+    @Test func parserReadsSplitStopTimesWhenPlainFileIsMissing() throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        func write(_ filename: String, _ text: String) throws {
+            try text.write(to: directoryURL.appendingPathComponent(filename), atomically: true, encoding: .utf8)
+        }
+
+        try write("agency.txt", "agency_id,agency_name\nagency,Test Agency\n")
+        try write("stops.txt", "stop_id,stop_name\nstop-a,Stop A\nstop-b,Stop B\n")
+        try write("routes.txt", "route_id,agency_id,route_short_name,route_long_name,route_type\nroute,agency,10,Route 10,3\n")
+        try write("trips.txt", "route_id,service_id,trip_id,trip_headsign\nroute,daily,trip,Stop B\n")
+        try write("calendar.txt", "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\ndaily,1,1,1,1,1,1,1,20260101,20261231\n")
+        try write("calendar_dates.txt", "service_id,date,exception_type\n")
+        try write("stop_times.txt.part00", "trip_id,stop_id,departure_time,stop_sequence\ntrip,stop-a,08:00:00,1\n")
+        try write("stop_times.txt.part01", "trip,stop-b,08:10:00,2\n")
+
+        let schedule = try GTFSParser().parse(directoryURL: directoryURL, feedId: "test", feedName: "Test Feed")
+
+        #expect(schedule.stopTimesByTripId["test:trip"]?.map(\.stopId) == ["test:stop-a", "test:stop-b"])
+        #expect(schedule.stopTimesByStopId["test:stop-a"]?.first?.departureSeconds == 28_800)
+    }
+
+    @MainActor
     @Test func repositoryFindsLateNightDepartureFromPreviousServiceDay() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!

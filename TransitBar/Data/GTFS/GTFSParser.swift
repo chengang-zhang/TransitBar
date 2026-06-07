@@ -44,10 +44,21 @@ nonisolated struct GTFSParser {
 
     private func read(_ filename: String, in directoryURL: URL) throws -> String {
         let url = directoryURL.appendingPathComponent(filename)
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        if FileManager.default.fileExists(atPath: url.path) {
+            return try String(contentsOf: url, encoding: .utf8)
+        }
+
+        let chunkPrefix = "\(filename).part"
+        let chunkURLs = try FileManager.default
+            .contentsOfDirectory(at: directoryURL, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix(chunkPrefix) }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+
+        guard !chunkURLs.isEmpty else {
             throw GTFSParserError.missingFile(filename)
         }
-        return try String(contentsOf: url, encoding: .utf8)
+
+        return try chunkURLs.map { try String(contentsOf: $0, encoding: .utf8) }.joined()
     }
 
     private func parseAgencies(_ text: String) throws -> [String: String] {
