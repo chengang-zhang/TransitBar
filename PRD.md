@@ -32,6 +32,7 @@ Add:
 - Predicted departure times
 - Refresh intervals
 - Stale data handling
+- Favorite-first loading that can show cached/static departures immediately, then reconcile with real-time data in the background
 
 UI should not require modification.
 
