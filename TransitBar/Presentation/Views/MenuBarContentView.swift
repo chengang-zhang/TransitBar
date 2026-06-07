@@ -5,16 +5,11 @@ struct MenuBarContentView: View {
     @Environment(\.openWindow) private var openWindow
     private let menuWidth: CGFloat = 420
     private let contentHorizontalPadding: CGFloat = 16
-    private let departureBadgeColumnWidth: CGFloat = 56
     private let departureRowSpacing: CGFloat = 10
     private let departureTimeWidth: CGFloat = 64
 
     private var contentWidth: CGFloat {
         menuWidth - (contentHorizontalPadding * 2)
-    }
-
-    private var departureLineWidth: CGFloat {
-        contentWidth - departureBadgeColumnWidth - departureTimeWidth - (departureRowSpacing * 2)
     }
 
     var body: some View {
@@ -92,14 +87,16 @@ struct MenuBarContentView: View {
                         .foregroundStyle(.primary.opacity(0.72))
                 } else {
                     ForEach(section.departures.prefix(2)) { departure in
+                        let badgeWidth = RouteBadgeImageFactory.size(for: departure).width
+
                         HStack(alignment: .center, spacing: departureRowSpacing) {
                             RouteBadgeView(departure: departure)
-                                .frame(width: departureBadgeColumnWidth, alignment: .leading)
+                                .frame(width: badgeWidth, alignment: .leading)
                             Text(departure.destination)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                                 .foregroundStyle(.primary)
-                                .frame(width: departureLineWidth, alignment: .leading)
+                                .frame(width: departureLineWidth(badgeWidth: badgeWidth), alignment: .leading)
                             Text(viewModel.minutesText(for: departure.departureTime))
                                 .monospacedDigit()
                                 .fontWeight(.semibold)
@@ -117,6 +114,10 @@ struct MenuBarContentView: View {
                 Divider()
             }
         }
+    }
+
+    private func departureLineWidth(badgeWidth: CGFloat) -> CGFloat {
+        contentWidth - badgeWidth - departureTimeWidth - (departureRowSpacing * 2)
     }
 
     private func surfaceTransitBarWindow() {
