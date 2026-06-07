@@ -74,6 +74,12 @@ jobs:
       - name: Set build paths
         run: echo "DERIVED_DATA=$RUNNER_TEMP/DerivedData" >> "$GITHUB_ENV"
 
+      - name: Set release version
+        run: |
+          set -euo pipefail
+          RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
+
       - name: Show Xcode version
         run: xcodebuild -version
 
@@ -87,7 +93,9 @@ jobs:
             -configuration Release \
             -destination 'platform=macOS' \
             -derivedDataPath "$DERIVED_DATA" \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION="$RELEASE_VERSION" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
 
           APP_PATH="$DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
           test -d "$APP_PATH"

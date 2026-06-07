@@ -14,7 +14,7 @@ To publish a release:
 
 1. Create a version tag that starts with `v`, for example `v1.0.0`.
 2. Push the tag to GitHub.
-3. The release workflow builds the app with the `Release` configuration on the macOS runner, packages `TransitBar.app` into a DMG, and uploads the DMG to the GitHub Release for that tag.
+3. The release workflow derives the app version from the tag by dropping the leading `v`, builds the app with the `Release` configuration on the macOS runner, packages `TransitBar.app` into a DMG, and uploads the DMG to the GitHub Release for that tag.
 
 Example:
 
