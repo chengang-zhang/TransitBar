@@ -11,6 +11,186 @@ import Foundation
 
 struct TransitBarTests {
 
+    @Test func oneBusAwayAPIKeyProviderPrefersUserDefaults() {
+        let suiteName = "TransitBarTests-\(UUID().uuidString)"
+        let userDefaults = UserDefaults(suiteName: suiteName)!
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+        userDefaults.set("defaults-key", forKey: OneBusAwayAPIKeyProvider.userDefaultsKey)
+
+        let apiKey = OneBusAwayAPIKeyProvider.apiKey(
+            userDefaults: userDefaults,
+            environment: [OneBusAwayAPIKeyProvider.environmentKey: "environment-key"]
+        )
+
+        #expect(apiKey == "defaults-key")
+    }
+
+    @Test func oneBusAwayAPIKeyProviderFallsBackToEnvironment() {
+        let suiteName = "TransitBarTests-\(UUID().uuidString)"
+        let userDefaults = UserDefaults(suiteName: suiteName)!
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        let apiKey = OneBusAwayAPIKeyProvider.apiKey(
+            userDefaults: userDefaults,
+            environment: [OneBusAwayAPIKeyProvider.environmentKey: "environment-key"]
+        )
+
+        #expect(apiKey == "environment-key")
+    }
+
+    @Test func oneBusAwayDecodesPredictedArrivalResponse() throws {
+        let json = """
+        {
+          "code": 200,
+          "text": "OK",
+          "currentTime": 1710959349232,
+          "data": {
+            "entry": {
+              "arrivalsAndDepartures": [
+                {
+                  "routeId": "1_100259",
+                  "routeShortName": "67",
+                  "tripHeadsign": "Northgate Station Roosevelt Station",
+                  "tripId": "1_534487075",
+                  "stopId": "1_75403",
+                  "predicted": true,
+                  "predictedDepartureTime": 1710959461000,
+                  "scheduledDepartureTime": 1710959220000,
+                  "status": "default"
+                }
+              ]
+            },
+            "references": {
+              "routes": [
+                {
+                  "id": "1_100259",
+                  "agencyId": "1",
+                  "shortName": "67",
+                  "longName": "",
+                  "description": "Northgate - Roosevelt - University District",
+                  "type": 3
+                }
+              ]
+            }
+          }
+        }
+        """
+
+        let response = try JSONDecoder().decode(
+            OneBusAwayEntryResponse<OneBusAwayArrivalsAndDeparturesForStop>.self,
+            from: Data(json.utf8)
+        )
+
+        let arrival = try #require(response.data.entry.arrivalsAndDepartures.first)
+        #expect(response.code == 200)
+        #expect(arrival.routeDisplayName == "67")
+        #expect(arrival.bestDepartureTimeMilliseconds == 1_710_959_461_000)
+        #expect(response.data.references?.routesById["1_100259"]?.description == "Northgate - Roosevelt - University District")
+    }
+
+    @Test func oneBusAwayIgnoresZeroTimestampPlaceholders() throws {
+        let json = """
+        {
+          "code": 200,
+          "text": "OK",
+          "data": {
+            "entry": {
+              "arrivalsAndDepartures": [
+                {
+                  "routeId": "40_2LINE",
+                  "routeShortName": "2 Line",
+                  "tripHeadsign": "Lynnwood City Center",
+                  "tripId": "40_trip",
+                  "stopId": "40_E27-T1",
+                  "predicted": false,
+                  "predictedDepartureTime": 0,
+                  "predictedArrivalTime": 0,
+                  "scheduledDepartureTime": 1780956480000,
+                  "scheduledArrivalTime": 1780956450000,
+                  "status": "default"
+                }
+              ]
+            }
+          }
+        }
+        """
+
+        let response = try JSONDecoder().decode(
+            OneBusAwayEntryResponse<OneBusAwayArrivalsAndDeparturesForStop>.self,
+            from: Data(json.utf8)
+        )
+
+        let arrival = try #require(response.data.entry.arrivalsAndDepartures.first)
+        #expect(arrival.bestDepartureTimeMilliseconds == 1_780_956_480_000)
+        #expect(arrival.scheduledTimeMilliseconds == 1_780_956_480_000)
+    }
+
+    @Test func oneBusAwayReferencesTolerateDuplicateStopIds() throws {
+        let json = """
+        {
+          "code": 200,
+          "text": "OK",
+          "data": {
+            "entry": {
+              "stopIds": ["40_C03"]
+            },
+            "references": {
+              "stops": [
+                { "id": "40_C03", "name": "Judkins Park", "code": "C03", "direction": "E" },
+                { "id": "40_C03", "name": "Judkins Park", "code": "C03", "direction": "W" }
+              ]
+            }
+          }
+        }
+        """
+
+        let response = try JSONDecoder().decode(
+            OneBusAwayEntryResponse<OneBusAwayStopsForRoute>.self,
+            from: Data(json.utf8)
+        )
+
+        #expect(response.data.references?.stopsById["40_C03"]?.name == "Judkins Park")
+    }
+
+    @Test func oneBusAwayRouteStopsPreferOrderedDirectionGrouping() throws {
+        let json = """
+        {
+          "code": 200,
+          "text": "OK",
+          "data": {
+            "entry": {
+              "routeId": "40_2LINE",
+              "stopIds": ["40_1108", "40_N23-T2", "40_E31-T1"],
+              "stopGroupings": [
+                {
+                  "type": "direction",
+                  "ordered": true,
+                  "stopGroups": [
+                    {
+                      "id": "0",
+                      "name": {
+                        "name": "Downtown Redmond",
+                        "names": ["Downtown Redmond"],
+                        "type": "destination"
+                      },
+                      "stopIds": ["40_N23-T2", "40_N19-T2", "40_E31-T1", "40_N23-T2"]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+        """
+
+        let response = try JSONDecoder().decode(
+            OneBusAwayEntryResponse<OneBusAwayStopsForRoute>.self,
+            from: Data(json.utf8)
+        )
+
+        #expect(response.data.entry.orderedStopIds == ["40_N23-T2", "40_N19-T2", "40_E31-T1"])
+    }
+
     @MainActor
     @Test func gtfsTimeSupportsHoursPastMidnight() {
         #expect(GTFSTime.seconds(from: "24:15:00") == 87_300)

@@ -12,6 +12,7 @@ struct FavoritesWindowView: View {
     @State private var selectedSection: TransitBarSection?
     @State private var visibleDepartureCountsByStopId: [String: Int] = [:]
     @State private var visibleLineStopDepartureCount = 3
+    @State private var expandedStopGroupIds: Set<String> = []
 
     private let departureExpansionIncrement = 3
     private let refreshIntervals: [TimeInterval] = [30, 60, 120, 300]
@@ -26,13 +27,15 @@ struct FavoritesWindowView: View {
         _soundTransitRealtimeDebugViewModel = StateObject(
             wrappedValue: SoundTransitRealtimeDebugViewModel(
                 agencyName: "Sound Transit",
-                provider: SoundTransitRealtimeProvider(configuration: .soundTransit)
+                agencyId: "40",
+                client: OneBusAwayAPIKeyProvider.apiKey().map { OneBusAwayClient(apiKey: $0) }
             )
         )
         _kingCountyRealtimeDebugViewModel = StateObject(
             wrappedValue: SoundTransitRealtimeDebugViewModel(
                 agencyName: "King County Metro",
-                provider: SoundTransitRealtimeProvider(configuration: .kingCountyMetro)
+                agencyId: "1",
+                client: OneBusAwayAPIKeyProvider.apiKey().map { OneBusAwayClient(apiKey: $0) }
             )
         )
         #endif
@@ -53,6 +56,16 @@ struct FavoritesWindowView: View {
             .sorted {
                 $0.sourceName.localizedStandardCompare($1.sourceName) == .orderedAscending
             }
+    }
+
+    private var stopGroups: [StopResultGroup] {
+        viewModel.lineStops.reduce(into: []) { groups, stop in
+            if let index = groups.firstIndex(where: { $0.name == stop.name }) {
+                groups[index].stops.append(stop)
+            } else {
+                groups.append(StopResultGroup(name: stop.name, stops: [stop]))
+            }
+        }
     }
 
     var body: some View {
@@ -225,7 +238,7 @@ struct FavoritesWindowView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(debugViewModel.agencyName) GTFS-Realtime")
+                    Text("\(debugViewModel.agencyName) OBA Realtime")
                         .font(.headline)
                     Text(debugViewModel.summaryText)
                         .font(.caption)
@@ -261,9 +274,9 @@ struct FavoritesWindowView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if debugViewModel.rows.isEmpty {
                 ContentUnavailableView(
-                    "No Realtime Trip Updates",
+                    "No OBA Arrivals",
                     systemImage: "antenna.radiowaves.left.and.right",
-                    description: Text("The \(debugViewModel.agencyName) feed did not return any stop time updates.")
+                    description: Text("OneBusAway did not return predicted arrivals for the sampled stops.")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -296,7 +309,7 @@ struct FavoritesWindowView: View {
     private func realtimeTripUpdateRow(_ row: SoundTransitRealtimeDebugRow) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(row.routeId)
+                Text(row.routeName)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8)
@@ -308,28 +321,28 @@ struct FavoritesWindowView: View {
 
                 Spacer()
 
-                if let delayText = row.delayText {
-                    Text(delayText)
+                if let predictionText = row.predictionText {
+                    Text(predictionText)
                         .font(.caption)
-                        .foregroundStyle(row.delayIsLate ? .orange : .green)
+                        .foregroundStyle(row.isPredicted ? .green : .secondary)
                 }
 
-                Text(row.stopRelationship)
+                Text(row.status)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 12) {
-                Text("Stop \(row.stopId)")
-                Text("Trip \(row.tripId)")
+                Text(row.stopName)
+                Text(row.destination)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
 
             HStack(spacing: 12) {
-                Text("Direction \(row.directionText)")
-                Text(row.tripRelationship)
+                Text("Stop \(row.stopId)")
+                Text("Trip \(row.tripId)")
             }
             .font(.caption2)
             .foregroundStyle(.tertiary)
@@ -447,6 +460,9 @@ struct FavoritesWindowView: View {
             .onAppear {
                 viewModel.scheduleLineSearch()
             }
+            .onChange(of: viewModel.selectedLine?.id) {
+                expandedStopGroupIds = []
+            }
         }
         .padding()
     }
@@ -473,24 +489,42 @@ struct FavoritesWindowView: View {
     }
 
     private var routeResultsPane: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 14) {
-                ForEach(lineSections) { section in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(section.sourceName)
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
+        Group {
+            if let errorMessage = viewModel.errorMessage, lineSections.isEmpty {
+                ContentUnavailableView(
+                    "Unable to Load Routes",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(errorMessage)
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !viewModel.isSearching && lineSections.isEmpty {
+                ContentUnavailableView(
+                    "No Routes Found",
+                    systemImage: "magnifyingglass",
+                    description: Text("Try another search or mode filter.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(lineSections) { section in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(section.sourceName)
+                                    .font(.headline)
+                                    .foregroundStyle(.secondary)
 
-                        LazyVGrid(columns: lineGridColumns, alignment: .leading, spacing: 8) {
-                            ForEach(section.lines) { line in
-                                routeButton(for: line)
+                                LazyVGrid(columns: lineGridColumns, alignment: .leading, spacing: 8) {
+                                    ForEach(section.lines) { line in
+                                        routeButton(for: line)
+                                    }
+                                }
                             }
                         }
                     }
+                    .padding(.vertical, 6)
+                    .padding(.trailing, 8)
                 }
             }
-            .padding(.vertical, 6)
-            .padding(.trailing, 8)
         }
     }
 
@@ -551,8 +585,8 @@ struct FavoritesWindowView: View {
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(viewModel.lineStops) { stop in
-                                stopRow(for: stop)
+                            ForEach(stopGroups) { group in
+                                stopGroupView(group)
                             }
                         }
                         .padding(.trailing, 6)
@@ -571,7 +605,44 @@ struct FavoritesWindowView: View {
         .accessibilityLabel(viewModel.selectedLine.map { "Stops for \($0.name)" } ?? "Stops")
     }
 
-    private func stopRow(for stop: TransitStop) -> some View {
+    private func stopGroupView(_ group: StopResultGroup) -> some View {
+        if let onlyStop = group.stops.only {
+            return AnyView(singleStopGroupView(group: group, stop: onlyStop))
+        }
+
+        let isExpanded = expandedStopGroupIds.contains(group.id) || group.contains(viewModel.selectedLineStop)
+
+        return AnyView(VStack(alignment: .leading, spacing: 4) {
+            Button {
+                toggleStopGroup(group)
+            } label: {
+                HStack(spacing: 8) {
+                    Text(group.name)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(group.stops) { stop in
+                        stopRow(for: stop)
+                    }
+                }
+                .padding(.leading, 8)
+            }
+        }
+        .padding(.vertical, 6))
+    }
+
+    private func singleStopGroupView(group: StopResultGroup, stop: TransitStop) -> some View {
         let isSelected = viewModel.selectedLineStop?.id == stop.id
 
         return VStack(alignment: .leading, spacing: 6) {
@@ -580,7 +651,8 @@ struct FavoritesWindowView: View {
                     visibleLineStopDepartureCount = viewModel.maxDeparturesPerStop
                     viewModel.selectLineStop(stop)
                 } label: {
-                    Text(stop.name)
+                    Text(group.name)
+                        .font(.subheadline.weight(.semibold))
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -603,8 +675,61 @@ struct FavoritesWindowView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+        )
+    }
+
+    private func toggleStopGroup(_ group: StopResultGroup) {
+        if expandedStopGroupIds.contains(group.id) {
+            expandedStopGroupIds.remove(group.id)
+            if let selectedLineStop = viewModel.selectedLineStop, group.contains(selectedLineStop) {
+                viewModel.selectLineStop(selectedLineStop)
+            }
+        } else {
+            expandedStopGroupIds.insert(group.id)
+        }
+    }
+
+    private func stopRow(for stop: TransitStop) -> some View {
+        let isSelected = viewModel.selectedLineStop?.id == stop.id
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button {
+                    visibleLineStopDepartureCount = viewModel.maxDeparturesPerStop
+                    viewModel.selectLineStop(stop)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(stop.detail ?? "Stop")
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if viewModel.isFavorite(stop) {
+                    Text("Added")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button("Add") {
+                        viewModel.addFavorite(from: stop)
+                    }
+                }
+            }
+
+            if isSelected {
+                selectedStopArrivals
+                    .padding(.leading, 8)
+            }
+        }
+        .frame(maxWidth: .infinity)
         .padding(.vertical, 5)
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 8)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
@@ -738,6 +863,24 @@ private struct LineResultSection: Identifiable {
     var id: String { sourceName }
 }
 
+private struct StopResultGroup: Identifiable {
+    let name: String
+    var stops: [TransitStop]
+
+    var id: String { stops.first?.id ?? name }
+
+    func contains(_ stop: TransitStop?) -> Bool {
+        guard let stop else { return false }
+        return stops.contains { $0.id == stop.id }
+    }
+}
+
+private extension Array {
+    var only: Element? {
+        count == 1 ? first : nil
+    }
+}
+
 private enum TransitBarSection: String, CaseIterable, Identifiable {
     case favorites
     case browse
@@ -809,7 +952,10 @@ private final class SoundTransitRealtimeDebugViewModel: ObservableObject {
 
     let agencyName: String
 
-    private let provider: any RealtimeProvider
+    private let agencyId: String
+    private let client: OneBusAwayClient?
+    private let routeSampleLimit = 8
+    private let stopsPerRouteSampleLimit = 2
     private var loadTask: Task<Void, Never>?
     private lazy var loadedAtFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -820,10 +966,12 @@ private final class SoundTransitRealtimeDebugViewModel: ObservableObject {
 
     init(
         agencyName: String = "Sound Transit",
-        provider: any RealtimeProvider = SoundTransitRealtimeProvider()
+        agencyId: String = "40",
+        client: OneBusAwayClient?
     ) {
         self.agencyName = agencyName
-        self.provider = provider
+        self.agencyId = agencyId
+        self.client = client
     }
 
     deinit {
@@ -845,7 +993,7 @@ private final class SoundTransitRealtimeDebugViewModel: ObservableObject {
 
     var summaryText: String {
         let loadedText = loadedAt.map { "updated \(loadedAtFormatter.string(from: $0))" } ?? "not loaded yet"
-        return "\(rows.count) stop updates, \(alertsCount) alerts, \(vehiclesCount) vehicles, \(loadedText)"
+        return "\(rows.count) arrivals, \(alertsCount) alerts, \(vehiclesCount) vehicles, \(loadedText)"
     }
 
     func loadRealtimeData(forceRefresh: Bool = false) {
@@ -859,14 +1007,15 @@ private final class SoundTransitRealtimeDebugViewModel: ObservableObject {
             defer { isLoading = false }
 
             do {
-                async let tripUpdates = provider.tripUpdates()
-                async let alerts = provider.alerts()
-                async let vehicles = provider.vehiclePositions()
+                guard let client else {
+                    throw OneBusAwayConfigurationError.missingAPIKey
+                }
 
-                rows = try await SoundTransitRealtimeDebugRow.rows(from: tripUpdates)
-                alertRows = try await SoundTransitRealtimeDebugAlertRow.rows(from: alerts)
-                alertsCount = alertRows.count
-                vehiclesCount = try await vehicles.count
+                let snapshot = try await loadOBASnapshot(client: client)
+                rows = snapshot.rows
+                alertRows = snapshot.alertRows
+                alertsCount = snapshot.alertRows.count
+                vehiclesCount = 0
                 loadedAt = Date()
                 errorMessage = nil
             } catch {
@@ -874,6 +1023,59 @@ private final class SoundTransitRealtimeDebugViewModel: ObservableObject {
             }
         }
     }
+
+    private func loadOBASnapshot(client: OneBusAwayClient) async throws -> OBADebugSnapshot {
+        let routes = try await client.routes(forAgency: agencyId).data.list
+            .sorted {
+                $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
+            }
+            .prefix(routeSampleLimit)
+
+        var rows: [SoundTransitRealtimeDebugRow] = []
+        var alertRowsById: [String: SoundTransitRealtimeDebugAlertRow] = [:]
+
+        for route in routes {
+            let stopsResponse = try await client.stops(forRoute: route.id)
+            let stopsById = stopsResponse.data.references?.stopsById ?? [:]
+            let stopIds = Array(stopsResponse.data.entry.orderedStopIds.prefix(stopsPerRouteSampleLimit))
+
+            for stopId in stopIds {
+                let arrivalsResponse = try await client.arrivalsAndDepartures(
+                    forStop: stopId,
+                    minutesBefore: 0,
+                    minutesAfter: 90
+                )
+                let routesById = arrivalsResponse.data.references?.routesById ?? [:]
+                let arrivalStopsById = arrivalsResponse.data.references?.stopsById ?? [:]
+                let situations = arrivalsResponse.data.references?.situations ?? []
+
+                rows.append(contentsOf: arrivalsResponse.data.entry.arrivalsAndDepartures.map { arrival in
+                    SoundTransitRealtimeDebugRow(
+                        arrival: arrival,
+                        route: routesById[arrival.routeId] ?? route,
+                        stop: arrivalStopsById[arrival.stopId] ?? stopsById[arrival.stopId]
+                    )
+                })
+
+                for situation in situations {
+                    let row = SoundTransitRealtimeDebugAlertRow(situation: situation)
+                    alertRowsById[row.id] = row
+                }
+            }
+        }
+
+        return OBADebugSnapshot(
+            rows: rows.sorted(by: SoundTransitRealtimeDebugRow.sort),
+            alertRows: alertRowsById.values.sorted {
+                $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
+        )
+    }
+}
+
+private struct OBADebugSnapshot {
+    let rows: [SoundTransitRealtimeDebugRow]
+    let alertRows: [SoundTransitRealtimeDebugAlertRow]
 }
 
 private struct SoundTransitRealtimeDebugAlertRow: Identifiable {
@@ -891,19 +1093,12 @@ private struct SoundTransitRealtimeDebugAlertRow: Identifiable {
         stopIds.isEmpty ? "Stops: none scoped" : "Stops: \(stopIds.joined(separator: ", "))"
     }
 
-    static func rows(from alerts: [RealtimeAlert]) -> [SoundTransitRealtimeDebugAlertRow] {
-        alerts.map { alert in
-            SoundTransitRealtimeDebugAlertRow(
-                id: alert.id,
-                title: alert.headerText ?? "Service alert",
-                description: alert.descriptionText,
-                routeIds: alert.routeIds.sorted(),
-                stopIds: alert.stopIds.sorted()
-            )
-        }
-        .sorted {
-            $0.title.localizedStandardCompare($1.title) == .orderedAscending
-        }
+    init(situation: OneBusAwaySituation) {
+        self.id = situation.id ?? UUID().uuidString
+        self.title = situation.summary?.value ?? "Service alert"
+        self.description = situation.description?.value
+        self.routeIds = []
+        self.stopIds = []
     }
 }
 
@@ -921,13 +1116,14 @@ private struct SoundTransitRealtimeDebugSection: Identifiable {
 private struct SoundTransitRealtimeDebugRow: Identifiable {
     let id: String
     let routeId: String
+    let routeName: String
     let tripId: String
     let stopId: String
-    let directionId: Int?
-    let tripRelationship: String
-    let stopRelationship: String
+    let stopName: String
+    let destination: String
+    let status: String
+    let isPredicted: Bool
     let time: Date?
-    let delay: TimeInterval?
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -941,48 +1137,22 @@ private struct SoundTransitRealtimeDebugRow: Identifiable {
         return Self.timeFormatter.string(from: time)
     }
 
-    var directionText: String {
-        directionId.map(String.init) ?? "unknown"
+    var predictionText: String? {
+        isPredicted ? "predicted" : "scheduled"
     }
 
-    var delayText: String? {
-        guard let delay else { return nil }
-
-        if delay == 0 {
-            return "on time"
-        }
-
-        let minutes = Int(abs(delay) / 60)
-        let seconds = Int(abs(delay).truncatingRemainder(dividingBy: 60))
-        let value = minutes > 0 ? "\(minutes)m \(seconds)s" : "\(seconds)s"
-        return delay > 0 ? "\(value) late" : "\(value) early"
-    }
-
-    var delayIsLate: Bool {
-        (delay ?? 0) > 0
-    }
-
-    static func rows(from tripUpdates: [RealtimeTripUpdate]) -> [SoundTransitRealtimeDebugRow] {
-        tripUpdates.flatMap { tripUpdate in
-            tripUpdate.stopTimeUpdates.enumerated().map { index, stopTimeUpdate in
-                let time = stopTimeUpdate.arrivalTime ?? stopTimeUpdate.departureTime
-                let delay = stopTimeUpdate.arrivalDelay ?? stopTimeUpdate.departureDelay
-                let tripId = tripUpdate.tripId ?? "unknown-trip"
-                let stopId = stopTimeUpdate.stopId ?? "unknown-stop"
-
-                return SoundTransitRealtimeDebugRow(
-                    id: "\(tripId)-\(stopId)-\(index)",
-                    routeId: tripUpdate.routeId ?? "unknown-route",
-                    tripId: tripId,
-                    stopId: stopId,
-                    directionId: tripUpdate.directionId,
-                    tripRelationship: tripUpdate.scheduleRelationship.debugTitle,
-                    stopRelationship: stopTimeUpdate.scheduleRelationship.debugTitle,
-                    time: time,
-                    delay: delay
-                )
-            }
-        }
+    init(arrival: OneBusAwayArrivalAndDeparture, route: OneBusAwayRoute?, stop: OneBusAwayStop?) {
+        let timeMilliseconds = arrival.bestDepartureTimeMilliseconds
+        self.id = "\(arrival.tripId ?? arrival.routeId)-\(arrival.stopId)-\(timeMilliseconds ?? 0)"
+        self.routeId = arrival.routeId
+        self.routeName = route?.displayName ?? arrival.routeDisplayName
+        self.tripId = arrival.tripId ?? "unknown-trip"
+        self.stopId = arrival.stopId
+        self.stopName = stop?.name ?? arrival.stopId
+        self.destination = arrival.tripHeadsign ?? route?.detailsText ?? "No destination"
+        self.status = arrival.status ?? "default"
+        self.isPredicted = arrival.predicted == true
+        self.time = timeMilliseconds.map { Date(timeIntervalSince1970: TimeInterval($0) / 1_000) }
     }
 
     static func sort(_ lhs: SoundTransitRealtimeDebugRow, _ rhs: SoundTransitRealtimeDebugRow) -> Bool {
@@ -998,42 +1168,6 @@ private struct SoundTransitRealtimeDebugRow: Identifiable {
             return false
         case (nil, nil):
             return lhs.stopId.localizedStandardCompare(rhs.stopId) == .orderedAscending
-        }
-    }
-}
-
-private extension RealtimeTripScheduleRelationship {
-    var debugTitle: String {
-        switch self {
-        case .scheduled:
-            return "scheduled"
-        case .added:
-            return "added"
-        case .unscheduled:
-            return "unscheduled"
-        case .canceled:
-            return "canceled"
-        case .replacement:
-            return "replacement"
-        case .duplicated:
-            return "duplicated"
-        case .unknown(let value):
-            return "unknown \(value)"
-        }
-    }
-}
-
-private extension RealtimeStopScheduleRelationship {
-    var debugTitle: String {
-        switch self {
-        case .scheduled:
-            return "scheduled"
-        case .skipped:
-            return "skipped"
-        case .noData:
-            return "no data"
-        case .unknown(let value):
-            return "unknown \(value)"
         }
     }
 }

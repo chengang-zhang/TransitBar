@@ -106,7 +106,7 @@ struct MenuBarContentView: View {
     }
 
     private func departureSections(width: CGFloat) -> some View {
-        ForEach(viewModel.departureSections) { section in
+        ForEach(Array(viewModel.departureSections.enumerated()), id: \.element.id) { index, section in
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Text(section.favorite.stopName)
@@ -157,6 +157,7 @@ struct MenuBarContentView: View {
                 }
             }
             .frame(width: width, alignment: .leading)
+            .padding(.top, index == 0 ? 0 : 6)
 
             if section.id != viewModel.departureSections.last?.id {
                 Divider()

@@ -109,7 +109,7 @@ final class TransitBarViewModel: ObservableObject {
                 errorMessage = nil
             } catch {
                 lineResults = []
-                errorMessage = "Unable to search stops."
+                errorMessage = "Unable to load routes: \(error.localizedDescription)"
             }
         }
     }
@@ -137,7 +137,7 @@ final class TransitBarViewModel: ObservableObject {
                 errorMessage = nil
             } catch {
                 lineStops = []
-                errorMessage = "Unable to load stops."
+                errorMessage = "Unable to load stops: \(error.localizedDescription)"
             }
         }
     }
@@ -169,7 +169,7 @@ final class TransitBarViewModel: ObservableObject {
             } catch {
                 guard selectedLineStop?.id == stopId else { return }
                 selectedLineStopDepartures = []
-                errorMessage = "Unable to load arrivals."
+                errorMessage = "Unable to load arrivals: \(error.localizedDescription)"
             }
         }
     }
@@ -198,7 +198,7 @@ final class TransitBarViewModel: ObservableObject {
     func addFavorite(from stop: TransitStop) {
         guard !favorites.contains(where: { $0.stopId == stop.id }) else { return }
 
-        favorites.append(FavoriteStop(stopId: stop.id, stopName: stop.name))
+        favorites.append(FavoriteStop(stopId: stop.id, stopName: stop.favoriteName))
         ensurePrimaryStop()
         persistFavorites()
         refreshDepartures()
@@ -296,13 +296,13 @@ final class TransitBarViewModel: ObservableObject {
         isLoadingDepartures = true
         defer { isLoadingDepartures = false }
 
-        do {
-            let favorites = favorites
-            let repository = repository
-            let alertService = alertService
-            let sections = try await withThrowingTaskGroup(of: (Int, StopDeparturesSection).self) { group in
-                for (index, favorite) in favorites.enumerated() {
-                    group.addTask {
+        let favorites = favorites
+        let repository = repository
+        let alertService = alertService
+        let sections = await withTaskGroup(of: (Int, StopDeparturesSection, Error?).self) { group in
+            for (index, favorite) in favorites.enumerated() {
+                group.addTask {
+                    do {
                         let departures = try await repository.getDepartures(stopId: favorite.stopId)
                         let alerts: [RealtimeAlert]
                         if let alertService {
@@ -310,24 +310,23 @@ final class TransitBarViewModel: ObservableObject {
                         } else {
                             alerts = []
                         }
-                        return (index, StopDeparturesSection(favorite: favorite, departures: departures, alerts: alerts))
+                        return (index, StopDeparturesSection(favorite: favorite, departures: departures, alerts: alerts), nil)
+                    } catch {
+                        return (index, StopDeparturesSection(favorite: favorite, departures: []), error)
                     }
                 }
-
-                var sections: [(Int, StopDeparturesSection)] = []
-                for try await section in group {
-                    sections.append(section)
-                }
-                return sections
-                    .sorted { $0.0 < $1.0 }
-                    .map(\.1)
             }
-            departureSections = sections
-            errorMessage = nil
-        } catch {
-            departureSections = []
-            errorMessage = "Unable to load departures."
+
+            var sections: [(Int, StopDeparturesSection, Error?)] = []
+            for await section in group {
+                sections.append(section)
+            }
+            return sections
+                .sorted { $0.0 < $1.0 }
+                .map { ($0.1, $0.2) }
         }
+        departureSections = sections.map(\.0)
+        errorMessage = sections.contains { $0.1 != nil } ? "Some departures could not be loaded." : nil
     }
 
     private func startRefreshTimer() {
