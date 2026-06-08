@@ -12,7 +12,25 @@ struct TransitBarApp: App {
     @StateObject private var viewModel: TransitBarViewModel
 
     init() {
-        _viewModel = StateObject(wrappedValue: TransitBarViewModel(repository: LazyStaticGtfsTransitRepository()))
+        let staticRepository = SQLiteGtfsTransitRepository()
+        let realtimeProvider = CompositeRealtimeProvider(providers: [
+            SoundTransitRealtimeProvider(configuration: .soundTransit),
+            SoundTransitRealtimeProvider(configuration: .kingCountyMetro)
+        ])
+        let arrivalService = RealtimeOverlayArrivalService(
+            staticArrivalService: StaticArrivalService(repository: staticRepository),
+            realtimeProvider: realtimeProvider
+        )
+        let repository = RealtimeOverlayTransitRepository(
+            baseRepository: staticRepository,
+            arrivalService: arrivalService
+        )
+        let alertService = RealtimeAlertService(realtimeProvider: realtimeProvider)
+        _viewModel = StateObject(wrappedValue: TransitBarViewModel(repository: repository, alertService: alertService))
+
+        Task.detached(priority: .utility) {
+            try? await staticRepository.warmCache()
+        }
     }
 
     var body: some Scene {

@@ -195,9 +195,13 @@ nonisolated final class StaticGtfsTransitRepository: TransitRepository, @uncheck
 
             return Departure(
                 id: "\(stopTime.tripId)-\(stopTime.stopId)-\(Int(departureDate.timeIntervalSince1970))",
+                tripId: stopTime.tripId,
+                stopId: stopTime.stopId,
+                routeId: trip.routeId,
                 routeName: route?.displayName ?? trip.routeId,
                 destination: destination,
                 departureTime: departureDate,
+                scheduledTime: departureDate,
                 routeColorHex: route?.colorHex,
                 routeTextColorHex: route?.textColorHex,
                 routeType: route?.routeType
@@ -333,7 +337,7 @@ nonisolated struct GTFSFeedResource: Sendable {
     ]
 }
 
-private nonisolated extension GTFSSchedule {
+nonisolated extension GTFSSchedule {
     static func merging(_ schedules: [GTFSSchedule]) -> GTFSSchedule {
         GTFSSchedule(
             stops: schedules.reduce(into: [:]) { $0.merge($1.stops) { current, _ in current } },

@@ -23,7 +23,8 @@ final class TransitBarViewModel: ObservableObject {
     @Published var searchQuery = ""
     @Published var stopSearchFilter: StopSearchFilter = .all
 
-    private let repository: TransitRepository
+    private let repository: any TransitRepository
+    private let alertService: (any AlertService)?
     private let settingsStore: UserSettingsStore
     private var refreshTask: Task<Void, Never>?
     private var displayClockTask: Task<Void, Never>?
@@ -41,8 +42,13 @@ final class TransitBarViewModel: ObservableObject {
         return formatter
     }()
 
-    init(repository: TransitRepository, settingsStore: UserSettingsStore = UserSettingsStore()) {
+    init(
+        repository: any TransitRepository,
+        alertService: (any AlertService)? = nil,
+        settingsStore: UserSettingsStore = UserSettingsStore()
+    ) {
         self.repository = repository
+        self.alertService = alertService
         self.settingsStore = settingsStore
         self.favorites = settingsStore.favorites
         self.primaryStopId = settingsStore.primaryStopId
@@ -275,6 +281,11 @@ final class TransitBarViewModel: ObservableObject {
         "\(departure.routeName) -> \(departure.destination)"
     }
 
+    func alertTitle(for section: StopDeparturesSection) -> String {
+        let count = section.alerts.count
+        return count == 1 ? "1 service alert" : "\(count) service alerts"
+    }
+
     private func loadDepartures() async {
         guard !favorites.isEmpty else {
             departureSections = []
@@ -286,10 +297,30 @@ final class TransitBarViewModel: ObservableObject {
         defer { isLoadingDepartures = false }
 
         do {
-            var sections: [StopDeparturesSection] = []
-            for favorite in favorites {
-                let departures = try await repository.getDepartures(stopId: favorite.stopId)
-                sections.append(StopDeparturesSection(favorite: favorite, departures: departures))
+            let favorites = favorites
+            let repository = repository
+            let alertService = alertService
+            let sections = try await withThrowingTaskGroup(of: (Int, StopDeparturesSection).self) { group in
+                for (index, favorite) in favorites.enumerated() {
+                    group.addTask {
+                        let departures = try await repository.getDepartures(stopId: favorite.stopId)
+                        let alerts: [RealtimeAlert]
+                        if let alertService {
+                            alerts = (try? await alertService.alerts(stopId: favorite.stopId, departures: departures)) ?? []
+                        } else {
+                            alerts = []
+                        }
+                        return (index, StopDeparturesSection(favorite: favorite, departures: departures, alerts: alerts))
+                    }
+                }
+
+                var sections: [(Int, StopDeparturesSection)] = []
+                for try await section in group {
+                    sections.append(section)
+                }
+                return sections
+                    .sorted { $0.0 < $1.0 }
+                    .map(\.1)
             }
             departureSections = sections
             errorMessage = nil
@@ -308,6 +339,16 @@ final class TransitBarViewModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(refreshInterval))
                 await loadDepartures()
             }
+        }
+    }
+
+    private func alerts(for stopId: String, departures: [Departure]) async -> [RealtimeAlert] {
+        guard let alertService else { return [] }
+
+        do {
+            return try await alertService.alerts(stopId: stopId, departures: departures)
+        } catch {
+            return []
         }
     }
 

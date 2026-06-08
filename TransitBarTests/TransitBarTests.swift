@@ -18,6 +18,215 @@ struct TransitBarTests {
         #expect(GTFSTime.seconds(from: "26:05:00") == 93_900)
     }
 
+    @Test func realtimeOverlayUsesExactTimestampUpdate() {
+        let scheduled = Date(timeIntervalSince1970: 1_800)
+        let predicted = Date(timeIntervalSince1970: 1_950)
+        let departure = testDeparture(scheduled: scheduled)
+        let update = RealtimeTripUpdate(
+            tripId: "trip",
+            stopTimeUpdates: [
+                RealtimeStopTimeUpdate(stopId: "stop", arrivalTime: predicted)
+            ]
+        )
+
+        let departures = RealtimeArrivalOverlayService().overlay(
+            staticDepartures: [departure],
+            tripUpdates: [update]
+        )
+
+        #expect(departures.first?.departureTime == predicted)
+        #expect(departures.first?.scheduledTime == scheduled)
+        #expect(departures.first?.predictionSource == .realtime)
+    }
+
+    @Test func realtimeOverlayAppliesDelayOnlyUpdate() {
+        let scheduled = Date(timeIntervalSince1970: 1_800)
+        let departure = testDeparture(scheduled: scheduled)
+        let update = RealtimeTripUpdate(
+            tripId: "trip",
+            stopTimeUpdates: [
+                RealtimeStopTimeUpdate(stopId: "stop", arrivalDelay: 120)
+            ]
+        )
+
+        let departures = RealtimeArrivalOverlayService().overlay(
+            staticDepartures: [departure],
+            tripUpdates: [update]
+        )
+
+        #expect(departures.first?.departureTime == scheduled.addingTimeInterval(120))
+        #expect(departures.first?.predictionSource == .realtime)
+    }
+
+    @Test func realtimeOverlayMarksOnTimeUpdateAsRealtime() {
+        let scheduled = Date(timeIntervalSince1970: 1_800)
+        let departure = testDeparture(scheduled: scheduled)
+        let update = RealtimeTripUpdate(
+            tripId: "trip",
+            stopTimeUpdates: [
+                RealtimeStopTimeUpdate(stopId: "stop", arrivalTime: scheduled)
+            ]
+        )
+
+        let departures = RealtimeArrivalOverlayService().overlay(
+            staticDepartures: [departure],
+            tripUpdates: [update]
+        )
+
+        #expect(departures.first?.departureTime == scheduled)
+        #expect(departures.first?.predictionSource == .realtime)
+    }
+
+    @Test func realtimeOverlayFallsBackWhenNoRealtimeMatchExists() {
+        let scheduled = Date(timeIntervalSince1970: 1_800)
+        let departure = testDeparture(scheduled: scheduled)
+        let update = RealtimeTripUpdate(
+            tripId: "other-trip",
+            stopTimeUpdates: [
+                RealtimeStopTimeUpdate(stopId: "stop", arrivalDelay: 120)
+            ]
+        )
+
+        let departures = RealtimeArrivalOverlayService().overlay(
+            staticDepartures: [departure],
+            tripUpdates: [update]
+        )
+
+        #expect(departures.first?.departureTime == scheduled)
+        #expect(departures.first?.predictionSource == .scheduled)
+    }
+
+    @Test func realtimeOverlayMarksCanceledTrip() {
+        let departure = testDeparture(scheduled: Date(timeIntervalSince1970: 1_800))
+        let update = RealtimeTripUpdate(
+            tripId: "trip",
+            scheduleRelationship: .canceled,
+            stopTimeUpdates: [
+                RealtimeStopTimeUpdate(stopId: "stop")
+            ]
+        )
+
+        let departures = RealtimeArrivalOverlayService().overlay(
+            staticDepartures: [departure],
+            tripUpdates: [update]
+        )
+
+        #expect(departures.first?.predictionSource == .canceled)
+        #expect(departures.first?.isCanceled == true)
+    }
+
+    @Test func realtimeOverlayMarksSkippedStop() {
+        let departure = testDeparture(scheduled: Date(timeIntervalSince1970: 1_800))
+        let update = RealtimeTripUpdate(
+            tripId: "trip",
+            stopTimeUpdates: [
+                RealtimeStopTimeUpdate(stopId: "stop", scheduleRelationship: .skipped)
+            ]
+        )
+
+        let departures = RealtimeArrivalOverlayService().overlay(
+            staticDepartures: [departure],
+            tripUpdates: [update]
+        )
+
+        #expect(departures.first?.predictionSource == .skipped)
+        #expect(departures.first?.isCanceled == true)
+    }
+
+    @Test func realtimeArrivalServiceFallsBackToStaticDeparturesWhenProviderFails() async throws {
+        let scheduled = Date(timeIntervalSince1970: 1_800)
+        let departure = testDeparture(scheduled: scheduled)
+        let service = RealtimeOverlayArrivalService(
+            staticArrivalService: MockArrivalService(departures: [departure]),
+            realtimeProvider: MockRealtimeProvider(error: TestRealtimeError.fetchFailed)
+        )
+
+        let departures = try await service.getDepartures(stopId: "stop")
+
+        #expect(departures == [departure])
+    }
+
+    @Test func realtimeAlertMatcherMatchesNamespacedStopId() {
+        let alert = RealtimeAlert(
+            id: "alert",
+            routeIds: [],
+            stopIds: ["990002"],
+            headerText: "Station alert",
+            descriptionText: nil
+        )
+
+        let matches = RealtimeAlertMatchingService().matching(
+            alerts: [alert],
+            stopId: "puget-sound:990002",
+            departures: []
+        )
+
+        #expect(matches == [alert])
+    }
+
+    @Test func realtimeAlertMatcherMatchesNamespacedRouteIdFromDeparture() {
+        let departure = Departure(
+            tripId: "trip",
+            stopId: "puget-sound:990002",
+            routeId: "puget-sound:100479",
+            routeName: "1",
+            destination: "Lynnwood",
+            departureTime: Date(timeIntervalSince1970: 1_800),
+            routeType: 0
+        )
+        let alert = RealtimeAlert(
+            id: "alert",
+            routeIds: ["100479"],
+            stopIds: [],
+            headerText: "Route alert",
+            descriptionText: nil
+        )
+
+        let matches = RealtimeAlertMatchingService().matching(
+            alerts: [alert],
+            stopId: "puget-sound:990002",
+            departures: [departure]
+        )
+
+        #expect(matches == [alert])
+    }
+
+    @Test func compositeRealtimeProviderCombinesSuccessfulProviders() async throws {
+        let soundTransitUpdate = RealtimeTripUpdate(tripId: "st-trip", stopTimeUpdates: [])
+        let metroUpdate = RealtimeTripUpdate(tripId: "metro-trip", stopTimeUpdates: [])
+        let provider = CompositeRealtimeProvider(providers: [
+            MockRealtimeProvider(tripUpdates: [soundTransitUpdate]),
+            MockRealtimeProvider(tripUpdates: [metroUpdate])
+        ])
+
+        let updates = try await provider.tripUpdates()
+
+        #expect(updates == [soundTransitUpdate, metroUpdate])
+    }
+
+    @Test func compositeRealtimeProviderKeepsSuccessfulProviderWhenAnotherFails() async throws {
+        let metroUpdate = RealtimeTripUpdate(tripId: "metro-trip", stopTimeUpdates: [])
+        let provider = CompositeRealtimeProvider(providers: [
+            MockRealtimeProvider(error: TestRealtimeError.fetchFailed),
+            MockRealtimeProvider(tripUpdates: [metroUpdate])
+        ])
+
+        let updates = try await provider.tripUpdates()
+
+        #expect(updates == [metroUpdate])
+    }
+
+    @Test func compositeRealtimeProviderReturnsEmptyWhenFeedsAreSuccessfullyEmpty() async throws {
+        let provider = CompositeRealtimeProvider(providers: [
+            MockRealtimeProvider(),
+            MockRealtimeProvider()
+        ])
+
+        let updates = try await provider.tripUpdates()
+
+        #expect(updates.isEmpty)
+    }
+
     @MainActor
     @Test func parserReadsSplitStopTimesWhenPlainFileIsMissing() throws {
         let directoryURL = FileManager.default.temporaryDirectory
@@ -452,4 +661,55 @@ struct TransitBarTests {
         #expect(routeStops.map(\.id) == ["terminal-a", "middle", "terminal-b"])
     }
 
+}
+
+private func testDeparture(scheduled: Date) -> Departure {
+    Departure(
+        id: "trip-stop-\(Int(scheduled.timeIntervalSince1970))",
+        tripId: "trip",
+        stopId: "stop",
+        routeId: "route",
+        routeName: "2",
+        destination: "Downtown Redmond",
+        departureTime: scheduled,
+        scheduledTime: scheduled,
+        routeType: 0
+    )
+}
+
+private struct MockArrivalService: ArrivalService {
+    let departures: [Departure]
+
+    func getDepartures(stopId: String) async throws -> [Departure] {
+        departures
+    }
+}
+
+private struct MockRealtimeProvider: RealtimeProvider {
+    let tripUpdates: [RealtimeTripUpdate]
+    let error: Error?
+
+    init(tripUpdates: [RealtimeTripUpdate] = [], error: Error? = nil) {
+        self.tripUpdates = tripUpdates
+        self.error = error
+    }
+
+    func tripUpdates() async throws -> [RealtimeTripUpdate] {
+        if let error {
+            throw error
+        }
+        return tripUpdates
+    }
+
+    func alerts() async throws -> [RealtimeAlert] {
+        []
+    }
+
+    func vehiclePositions() async throws -> [RealtimeVehiclePosition] {
+        []
+    }
+}
+
+private enum TestRealtimeError: Error {
+    case fetchFailed
 }

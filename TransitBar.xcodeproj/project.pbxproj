@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		9B2E4C632FE5810A00D69F31 /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = 9B2E4C622FE5810A00D69F31 /* SwiftProtobuf */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		78B837182FD393AD00184A34 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9B2E4C632FE5810A00D69F31 /* SwiftProtobuf in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +117,7 @@
 			);
 			name = TransitBar;
 			packageProductDependencies = (
+				9B2E4C622FE5810A00D69F31 /* SwiftProtobuf */,
 			);
 			productName = TransitBar;
 			productReference = 78B8370A2FD393AB00184A34 /* TransitBar.app */;
@@ -195,6 +201,9 @@
 			);
 			mainGroup = 78B837012FD393AB00184A34;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				9B2E4C612FE5810A00D69F31 /* XCRemoteSwiftPackageReference "swift-protobuf" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 78B8370B2FD393AB00184A34 /* Products */;
 			projectDirPath = "";
@@ -388,6 +397,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = TransitBar/TransitBar.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = YES;
@@ -414,6 +424,7 @@
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "ST_REALTIME_TEST $(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -428,6 +439,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = TransitBar/TransitBar.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = YES;
@@ -593,6 +605,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		9B2E4C612FE5810A00D69F31 /* XCRemoteSwiftPackageReference "swift-protobuf" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-protobuf.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.29.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		9B2E4C622FE5810A00D69F31 /* SwiftProtobuf */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9B2E4C612FE5810A00D69F31 /* XCRemoteSwiftPackageReference "swift-protobuf" */;
+			productName = SwiftProtobuf;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 78B837022FD393AB00184A34 /* Project object */;
 }

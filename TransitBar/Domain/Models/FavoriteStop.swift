@@ -1,6 +1,6 @@
 import Foundation
 
-struct FavoriteStop: Identifiable, Codable, Equatable, Sendable {
+nonisolated struct FavoriteStop: Identifiable, Codable, Equatable, Sendable {
     var stopId: String
     var stopName: String
     var label: StopLabel?

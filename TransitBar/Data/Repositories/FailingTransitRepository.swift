@@ -1,6 +1,6 @@
 import Foundation
 
-struct FailingTransitRepository: TransitRepository {
+nonisolated struct FailingTransitRepository: TransitRepository {
     let error: Error
 
     func searchLines(query: String, filter: StopSearchFilter) async throws -> [TransitLine] {
